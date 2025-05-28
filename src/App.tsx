@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router";
+// App.tsx
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"; // Asegúrate de que sea 'react-router-dom'
 import SignIn from "./pages/AuthPages/SignIn";
 import VerifyCodeForm from "./pages/AuthPages/SignUp";
 import RecoverPassword from "./pages/AuthPages/RecoverPassword"
@@ -17,25 +18,31 @@ import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
 import ChangePasswordForm from "./pages/AuthPages/ChangePassword";
+import { useAuth } from "./context/authContext"; // <--- Importa el hook useAuth
+
+// Componente auxiliar para proteger rutas
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated } = useAuth(); // <--- Obtén el estado de autenticación del contexto
+  return isAuthenticated ? <>{children}</> : <Navigate to="/" replace />;
+};
 
 export default function App() {
-  const isAuth = !! localStorage.getItem("token")
-
   return (
     <>
       <Router>
         <ScrollToTop />
         <Routes>
-          {/* Dashboard Layout */}
-          <Route element={<AppLayout />}>
-            <Route path="/dashboard" element={isAuth ? <Home/> : <Navigate to="/"/>} />
+          {/* Rutas de Autenticación (accesibles para cualquiera, incluso sin estar logueado) */}
+          <Route index path="/" element={<SignIn />} />
+          <Route path="/verificar-codigo" element={<VerifyCodeForm />} />
+          <Route path="/reset-password" element={<RecoverPassword />} />
+          <Route path="/cambiar-clave" element={<ChangePasswordForm />} />
 
-            {/* Others Page */}
+          {/* Grupo de Rutas Protegidas */}
+          {/* Ahora, todas las rutas dentro de este Route requieren autenticación */}
+          <Route element={<ProtectedRoute> <AppLayout /> </ProtectedRoute>}>
+            <Route path="/dashboard" element={<Home />} />
             <Route path="/blank" element={<Blank />} />
-
-            {/* Forms */}
-
-            {/* Tables */}
             <Route path="/roles" element={<Roles />} />
             <Route path="/permisos" element={<Permisos />} />
             <Route path="/usuarios" element={<Usuarios />} />
@@ -45,18 +52,7 @@ export default function App() {
             <Route path="/ventas" element={<Ventas />} />
             <Route path="/productos" element={<Productos />} />
             <Route path="/compras" element={<Compras />} />
-
-            {/* Ui Elements */}
-
-
-            {/* Charts */}
           </Route>
-
-          {/* Auth Layout */}
-          <Route index path="/" element={<SignIn />} />
-          <Route path="/verificar-codigo" element={<VerifyCodeForm />} />
-          <Route path="/reset-password" element={<RecoverPassword />} />
-          <Route path="/cambiar-clave" element={<ChangePasswordForm />} />
 
           {/* Fallback Route */}
           <Route path="*" element={<NotFound />} />

@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { Dropdown } from "../ui/dropdown/Dropdown";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router-dom"; // Asegúrate de importar 'useNavigate' y 'Link' de 'react-router-dom'
+import { useAuth } from "../../context/authContext"; // Importa tu hook de autenticación
 
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate(); // Inicializa useNavigate
+  const { logout } = useAuth(); // Obtén la función logout del contexto
 
   function toggleDropdown() {
     setIsOpen(!isOpen);
@@ -13,13 +16,19 @@ export default function UserDropdown() {
   function closeDropdown() {
     setIsOpen(false);
   }
+
+  const handleLogout = () => {
+    logout(); // Llama a la función logout del contexto (elimina el token de localStorage y el estado)
+    closeDropdown(); // Cierra el dropdown
+    navigate("/"); // Redirige al usuario a la página de inicio de sesión
+  };
+
   return (
     <div className="relative">
       <button
         onClick={toggleDropdown}
         className="flex items-center text-gray-700 dropdown-toggle dark:text-gray-400"
       >
-
         <span className="block mr-1 font-medium text-theme-sm">Aministrador</span>
         <svg
           className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
@@ -59,7 +68,7 @@ export default function UserDropdown() {
           <li>
             <DropdownItem
               onItemClick={closeDropdown}
-              tag="a"
+              tag="a" // Si mantienes 'tag="a"' asegúrate de que el 'to' no cause problemas, o cambia a 'Link' directamente.
               to="/profile"
               className="flex items-center gap-3 px-3 py-2 font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
             >
@@ -83,7 +92,8 @@ export default function UserDropdown() {
           </li>
         </ul>
         <Link
-          to="/"
+          to="/" // No es necesario 'to="/"' aquí, ya que la redirección la manejará handleLogout
+          onClick={handleLogout} // <--- Llama a la función handleLogout al hacer clic
           className="flex items-center gap-3 px-3 py-2 mt-3 font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
         >
           <svg
