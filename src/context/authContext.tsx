@@ -1,11 +1,19 @@
 // src/context/AuthContext.tsx
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 
+// === INTERFAZ ACTUALIZADA PARA LA INFORMACIÓN DEL USUARIO ===
+interface UserInfo {
+  login: string;
+  correo: string;
+  id_rol: number; // <--- ¡ASEGÚRATE DE QUE TU BACKEND DEVUELVA ESTE CAMPO AL INICIAR SESIÓN!
+}
+
 // Define el tipo para el contexto de autenticación
 interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
-  login: (newToken: string) => void;
+  user: UserInfo | null; // Almacenará la info del usuario
+  login: (newToken: string, userData: UserInfo) => void; // Acepta datos de usuario
   logout: () => void;
 }
 
@@ -19,32 +27,50 @@ interface AuthProviderProps {
 
 // Componente AuthProvider que gestiona el estado de autenticación
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  // Inicializa el token desde localStorage al montar el componente
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-  // Calcula si el usuario está autenticado basado en la existencia del token
+  const [user, setUser] = useState<UserInfo | null>(() => {
+    const storedUser = localStorage.getItem('user'); // Tu clave para guardar el objeto user
+    if (storedUser) {
+      try {
+        return JSON.parse(storedUser);
+      } catch (e) {
+        console.error("Error parsing user info from localStorage:", e);
+        localStorage.removeItem('user'); // Limpiar si hay error
+        return null;
+      }
+    }
+    return null;
+  });
   const isAuthenticated = !!token;
 
-  // Usa useEffect para sincronizar el estado 'token' con localStorage
   useEffect(() => {
     if (token) {
       localStorage.setItem('token', token);
     } else {
       localStorage.removeItem('token');
     }
-  }, [token]); // Este efecto se ejecuta cada vez que el 'token' cambia
+  }, [token]);
 
-  // Función para iniciar sesión: guarda el nuevo token
-  const login = (newToken: string) => {
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('user');
+    }
+  }, [user]);
+
+  const login = (newToken: string, userData: UserInfo) => {
     setToken(newToken);
+    setUser(userData);
   };
 
-  // Función para cerrar sesión: elimina el token
   const logout = () => {
     setToken(null);
+    setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ token, isAuthenticated, user, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

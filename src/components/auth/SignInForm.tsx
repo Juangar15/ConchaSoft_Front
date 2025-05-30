@@ -1,11 +1,11 @@
 // src/pages/AuthPages/SignIn.tsx
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom"; // Asegúrate de que sea 'react-router-dom'
-import { EyeCloseIcon, EyeIcon } from "../../icons";
-import Label from "../form/Label";
-import Input from "../form/input/InputField";
-import Button from "../ui/button/Button";
-import { useAuth } from "../../context/authContext"; // Importa el hook useAuth
+import { Link, useNavigate } from "react-router-dom";
+import { EyeCloseIcon, EyeIcon } from "../../icons"; // Asegúrate de que las rutas sean correctas
+import Label from "../../components/form/Label";       // Asegúrate de que las rutas sean correctas
+import Input from "../../components/form/input/InputField"; // Asegúrate de que las rutas sean correctas
+import Button from "../../components/ui/button/Button";   // Asegúrate de que las rutas sean correctas
+import { useAuth } from "../../context/authContext";    // Ruta correcta para tu AuthContext
 
 export default function SignInForm() {
   const [showPassword, setShowPassword] = useState(false);
@@ -13,7 +13,7 @@ export default function SignInForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { login } = useAuth(); // <--- Obtén la función 'login' del contexto
+  const { login } = useAuth(); // Obtiene la función login del contexto
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,8 +32,17 @@ export default function SignInForm() {
 
       if (response.ok) {
         console.log("Inicio de sesión exitoso:", data);
-        login(data.token); // <--- Usa la función 'login' del contexto para guardar el token
-        navigate("/dashboard"); // Redirige al dashboard
+        // === CAMBIO CLAVE AQUÍ: EXTRAER user DE LA RESPUESTA ===
+        // Suponemos que 'data' es { token: "...", user: { login: "...", correo: "...", id_rol: X } }
+        const { token, user } = data;
+
+        // **IMPORTANTE**: Verifica que 'user' tenga la propiedad 'id_rol'
+        if (token && user && typeof user.id_rol === 'number') {
+          login(token, user); // Pasa el token Y la información completa del usuario al contexto
+          navigate("/dashboard"); // Redirige al dashboard o a donde corresponda
+        } else {
+          setError("Respuesta de la API incompleta o inesperada. Falta token o datos de usuario (incluyendo rol).");
+        }
       } else {
         console.error("Error al iniciar sesión:", data.error);
         setError(data.error || "Error al iniciar sesión. Inténtalo de nuevo.");

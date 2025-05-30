@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { Dropdown } from "../ui/dropdown/Dropdown";
-import { Link, useNavigate } from "react-router-dom"; // Asegúrate de importar 'useNavigate' y 'Link' de 'react-router-dom'
-import { useAuth } from "../../context/authContext"; // Importa tu hook de autenticación
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/authContext"; // Ruta correcta a tu AuthContext
 
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
-  const navigate = useNavigate(); // Inicializa useNavigate
-  const { logout } = useAuth(); // Obtén la función logout del contexto
+  const navigate = useNavigate();
+  const { logout, user } = useAuth(); // Obtén el objeto 'user' del contexto
 
   function toggleDropdown() {
     setIsOpen(!isOpen);
@@ -18,10 +18,18 @@ export default function UserDropdown() {
   }
 
   const handleLogout = () => {
-    logout(); // Llama a la función logout del contexto (elimina el token de localStorage y el estado)
-    closeDropdown(); // Cierra el dropdown
-    navigate("/"); // Redirige al usuario a la página de inicio de sesión
+    logout();
+    closeDropdown();
+    navigate("/"); // Redirige a la ruta raíz que es tu SignIn
   };
+
+  const handleManagementClick = () => {
+    navigate('/admin/users'); // La ruta a tu página de gestión de usuarios
+    closeDropdown(); // Cierra el dropdown después de navegar
+  };
+
+  // Asume que 1 es el id_rol para el rol de "Administrador"
+  const isAdmin = user && user.id_rol === 1;
 
   return (
     <div className="relative">
@@ -29,7 +37,9 @@ export default function UserDropdown() {
         onClick={toggleDropdown}
         className="flex items-center text-gray-700 dropdown-toggle dark:text-gray-400"
       >
-        <span className="block mr-1 font-medium text-theme-sm">Aministrador</span>
+        <span className="block mr-1 font-medium text-theme-sm">
+          {user ? user.login : "Cargando..."} {/* Muestra el login del usuario */}
+        </span>
         <svg
           className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""
@@ -50,6 +60,7 @@ export default function UserDropdown() {
         </svg>
       </button>
 
+      {/* Tu componente Dropdown ya maneja la visibilidad con `isOpen` */}
       <Dropdown
         isOpen={isOpen}
         onClose={closeDropdown}
@@ -57,46 +68,48 @@ export default function UserDropdown() {
       >
         <div>
           <span className="block font-medium text-gray-700 text-theme-sm dark:text-gray-400">
-            Juan Perea
+            {user ? user.login : "Usuario Desconocido"}
           </span>
           <span className="mt-0.5 block text-theme-xs text-gray-500 dark:text-gray-400">
-            correo@correo
+            {user ? user.correo : "correo@ejemplo.com"}
           </span>
         </div>
 
         <ul className="flex flex-col gap-1 pt-4 pb-3 border-b border-gray-200 dark:border-gray-800">
-          <li>
-            <DropdownItem
-              onItemClick={closeDropdown}
-              tag="a" // Si mantienes 'tag="a"' asegúrate de que el 'to' no cause problemas, o cambia a 'Link' directamente.
-              to="/profile"
-              className="flex items-center gap-3 px-3 py-2 font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
-            >
-              <svg
-                className="fill-gray-500 group-hover:fill-gray-700 dark:fill-gray-400 dark:group-hover:fill-gray-300"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
+          {/* === AÑADIDO: Opcional para Administradores === */}
+          {isAdmin && (
+            <li>
+              <DropdownItem
+                onItemClick={handleManagementClick} // Llama a la función que navega
+                tag="a" // O "Link" si tu DropdownItem soporta el componente Link de React Router
+                to="/admin/users" // La ruta a tu página de administración de usuarios
+                className="flex items-center gap-3 px-3 py-2 font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
               >
-                <path
-                  fillRule="evenodd"
-                  clipRule="evenodd"
-                  d="M12 3.5C7.30558 3.5 3.5 7.30558 3.5 12C3.5 14.1526 4.3002 16.1184 5.61936 17.616C6.17279 15.3096 8.24852 13.5955 10.7246 13.5955H13.2746C15.7509 13.5955 17.8268 15.31 18.38 17.6167C19.6996 16.119 20.5 14.153 20.5 12C20.5 7.30558 16.6944 3.5 12 3.5ZM17.0246 18.8566V18.8455C17.0246 16.7744 15.3457 15.0955 13.2746 15.0955H10.7246C8.65354 15.0955 6.97461 16.7744 6.97461 18.8455V18.856C8.38223 19.8895 10.1198 20.5 12 20.5C13.8798 20.5 15.6171 19.8898 17.0246 18.8566ZM2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12ZM11.9991 7.25C10.8847 7.25 9.98126 8.15342 9.98126 9.26784C9.98126 10.3823 10.8847 11.2857 11.9991 11.2857C13.1135 11.2857 14.0169 10.3823 14.0169 9.26784C14.0169 8.15342 13.1135 7.25 11.9991 7.25ZM8.48126 9.26784C8.48126 7.32499 10.0563 5.75 11.9991 5.75C13.9419 5.75 15.5169 7.32499 15.5169 9.26784C15.5169 11.2107 13.9419 12.7857 11.9991 12.7857C10.0563 12.7857 8.48126 11.2107 8.48126 9.26784Z"
-                  fill=""
-                />
-              </svg>
-              Editar
-            </DropdownItem>
-          </li>
+                {/* Puedes añadir un SVG para el icono de gestión de usuarios si lo tienes */}
+                <svg
+                  className="fill-gray-500 group-hover:fill-gray-700 dark:fill-gray-400 dark:group-hover:fill-gray-300"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z" fill="currentColor"/>
+                  <path d="M12 14C8.68629 14 6 16.6863 6 20V22H18V20C18 16.6863 15.3137 14 12 14Z" fill="currentColor"/>
+                  {/* Este es un SVG de ejemplo simple para un icono de usuario/gestión. Reemplázalo si tienes uno específico. */}
+                </svg>
+                Gestión de Usuarios
+              </DropdownItem>
+            </li>
+          )}
+          {/* ======================================= */}
         </ul>
         <Link
-          to="/" // No es necesario 'to="/"' aquí, ya que la redirección la manejará handleLogout
-          onClick={handleLogout} // <--- Llama a la función handleLogout al hacer clic
+          to="#" // Mantén to="#" si onClick es el que maneja la navegación/logout
+          onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2 mt-3 font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
         >
-          <svg
+          <svg /* ... (tu SVG de cerrar sesión) ... */
             className="fill-gray-500 group-hover:fill-gray-700 dark:group-hover:fill-gray-300"
             width="24"
             height="24"

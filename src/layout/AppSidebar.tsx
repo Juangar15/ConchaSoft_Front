@@ -1,25 +1,32 @@
+// src/components/layout/AppSidebar.tsx
+
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation } from "react-router-dom";
 import {
   ChevronDownIcon,
   GridIcon,
   HorizontaLDots,
   UserCircleIcon,
-  GroupIcon,
-  ArrowDownIcon,
-  BoxIcon,
-  UserIcon,
   DollarLineIcon,
-  BoxCubeIcon,
   DownloadIcon,
+  // Otros íconos si los necesitas
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 
+// Define el tipo para los subitems
+type SubItem = {
+  name: string;
+  path: string;
+  pro?: boolean; // Si tienes planes pro
+  new?: boolean; // Para marcar elementos nuevos
+};
+
+// Define el tipo para los ítems de navegación principales
 type NavItem = {
   name: string;
   icon: React.ReactNode;
-  path?: string;
-  subItems?: { name: string; path: string; pro?: boolean; new?: boolean }[];
+  path?: string; // Opcional si es un menú principal con subItems
+  subItems?: SubItem[]; // Añadido para los submenús
 };
 
 const navItems: NavItem[] = [
@@ -29,45 +36,35 @@ const navItems: NavItem[] = [
     path: "/dashboard",
   },
   {
-    icon: <GroupIcon />,
-    name: "Roles",
-    path: "/roles",
-  },
-  {
-    icon: <UserCircleIcon />,
-    name: "Usuarios",
-    path: "/usuarios",
-  },
-  {
-    icon: <DownloadIcon />,
+    icon: <DownloadIcon />, // Icono para el menú principal de Compras
     name: "Compras",
-    path: "/compras",
+    subItems: [
+      { name: "Listado de Compras", path: "/compras" },
+      { name: "Proveedores", path: "/proveedores" },
+      { name: "Productos", path: "/productos" },
+      // "Devoluciones (Compras)" is removed, or if it still exists, ensure it's correct.
+      // For this example, we're assuming it's entirely replaced by sales returns.
+    ],
   },
   {
-    icon: <BoxCubeIcon />,
-    name: "Productos",
-    path: "/productos",
-  },
-  {
-    icon: <DollarLineIcon />,
+    icon: <DollarLineIcon />, // Icono para el menú principal de Ventas
     name: "Ventas",
-    path: "/ventas",
+    subItems: [
+      { name: "Listado de Ventas", path: "/ventas" },
+      { name: "Clientes", path: "/clientes" },
+      { name: "Devoluciones (Ventas)", path: "/devoluciones-ventas" }, // Renamed path and name
+    ],
   },
   {
-    icon: <UserIcon />,
-    name: "Clientes",
-    path: "/clientes",
+    icon: <UserCircleIcon />, // Un icono para el menú de Administración/Acceso
+    name: "Administración",
+    subItems: [
+      // { name: "Usuarios", path: "/usuarios" }, // REMOVED as per request
+      { name: "Roles", path: "/roles" },
+      // { name: "Permisos", path: "/permisos" }, // REMOVED as per request
+    ],
   },
-  {
-    icon: <BoxIcon />,
-    name: "Proveedores",
-    path: "/proveedores",
-  },
-  {
-    icon: <ArrowDownIcon />,
-    name: "Devoluciones",
-    path: "/devoluciones",
-  },
+  // Si tienes otras secciones que no necesitan submenú, las mantienes aquí
 ];
 
 const AppSidebar: React.FC = () => {
@@ -96,6 +93,9 @@ const AppSidebar: React.FC = () => {
             submenuMatched = true;
           }
         });
+      } else if (nav.path && isActive(nav.path)) {
+        setOpenSubmenu(null);
+        submenuMatched = true;
       }
     });
     if (!submenuMatched) setOpenSubmenu(null);
@@ -112,6 +112,19 @@ const AppSidebar: React.FC = () => {
       }
     }
   }, [openSubmenu]);
+
+  useEffect(() => {
+    if (openSubmenu !== null && (isExpanded || isHovered || isMobileOpen)) {
+      const key = `${openSubmenu.type}-${openSubmenu.index}`;
+      if (subMenuRefs.current[key]) {
+        setSubMenuHeight((prev) => ({
+          ...prev,
+          [key]: subMenuRefs.current[key]?.scrollHeight || 0,
+        }));
+      }
+    }
+  }, [isExpanded, isHovered, isMobileOpen, openSubmenu]);
+
 
   const handleSubmenuToggle = (index: number) => {
     setOpenSubmenu((prev) =>
@@ -198,6 +211,12 @@ const AppSidebar: React.FC = () => {
                       }`}
                     >
                       {subItem.name}
+                      {subItem.new && (
+                        <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-green-500 text-white">Nuevo</span>
+                      )}
+                      {subItem.pro && (
+                        <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-yellow-500 text-white">Pro</span>
+                      )}
                     </Link>
                   </li>
                 ))}
@@ -211,7 +230,7 @@ const AppSidebar: React.FC = () => {
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-400 
+      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-400
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"

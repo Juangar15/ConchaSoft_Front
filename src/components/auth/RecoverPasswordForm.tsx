@@ -1,23 +1,56 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
-import { Link } from "react-router";
-import { ChevronLeftIcon } from "../../icons";
-import Label from "../form/Label";
-import Input from "../form/input/InputField";
-import Button from "../ui/button/Button";
+import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { ChevronLeftIcon } from "../../icons"; // Asegúrate de que esta ruta sea correcta
+import Label from "../form/Label";             // Asegúrate de que esta ruta sea correcta
+import Input from "../form/input/InputField";  // Asegúrate de que esta ruta sea correcta
+import Button from "../ui/button/Button";      // Asegúrate de que esta ruta sea correcta
 
 export default function RecoverPasswordForm() {
   const [email, setEmail] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // URL base de tu API desplegada en Render
+  const API_BASE_URL = 'https://conchasoft-api.onrender.com/api/auth'; 
+
+  const handleSubmit = async (e: React.FormEvent) => { // CORRECCIÓN AQUÍ: Añadido el tipo React.FormEvent
     e.preventDefault();
+    setMessage("");
+    setError("");
 
-    // Aquí podrías hacer la petición al backend para enviar el código
+    if (!email) {
+      setError("Por favor, ingresa tu correo electrónico.");
+      return;
+    }
 
-    console.log("Correo ingresado:", email); // debug
+    setIsLoading(true);
 
-    navigate("/verificar-codigo"); // Redirige al form de código
+    try {
+      const response = await fetch(`${API_BASE_URL}/request-password-reset`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMessage(data.message || "Se ha enviado un código de recuperación a tu correo.");
+        navigate("/verificar-codigo", { state: { email } });
+      } else {
+        setError(data.error || "Ocurrió un error al procesar tu solicitud.");
+      }
+    } catch (err) {
+      console.error("Error en la petición:", err);
+      setError("No se pudo conectar con el servidor. Inténtalo de nuevo más tarde.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -44,19 +77,29 @@ export default function RecoverPasswordForm() {
           <form onSubmit={handleSubmit}>
             <div className="space-y-6">
               <div>
-                <Label>
+                <Label htmlFor="email">
                   Correo electrónico <span className="text-error-500">*</span>
                 </Label>
                 <Input
+                  id="email"
                   type="email"
                   placeholder="tucorreo@ejemplo.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  disabled={isLoading}
                 />
               </div>
+
+              {message && (
+                <div className="text-green-600 text-sm mt-2">{message}</div>
+              )}
+              {error && (
+                <div className="text-red-500 text-sm mt-2">{error}</div>
+              )}
+
               <div>
-                <Button className="w-full" size="sm">
-                  Enviar instrucciones
+                <Button className="w-full" size="sm" type="submit" disabled={isLoading}>
+                  {isLoading ? "Enviando..." : "Enviar instrucciones"}
                 </Button>
               </div>
             </div>
