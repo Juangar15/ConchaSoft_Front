@@ -12,7 +12,7 @@ export default function Roles() {
       />
       <PageBreadcrumb pageTitle="ConchaSoft - Devoluciones" />
       <div className="space-y-6 border overflow-hidden rounded-xl border-gray-400 dark:border-none">
-        <ComponentCard title="Devoluciones">
+        <ComponentCard title="Gestión de Devoluciones">
           <DevolucionesOne />
         </ComponentCard>
       </div>
