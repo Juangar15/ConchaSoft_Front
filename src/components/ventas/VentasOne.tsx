@@ -1,496 +1,692 @@
+import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from 'react-toastify';
+
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHeader,
-    TableRow,
-  } from "../ui/table";
-  import Button from "@mui/material/Button"
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableRow,
+} from "../ui/table";
+import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
-import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
-import CancellIcon from '@mui/icons-material/Cancel'
-import VisibilityIcon from '@mui/icons-material/Visibility'
-import AddIcon from '@mui/icons-material/Add'
-import Tooltip from '@mui/material/Tooltip'
-  import Modal from "../ui/modal/Modal";
-  import DeleteIcon from '@mui/icons-material/Delete'
-  import { useState } from "react";
-  import Dialog from '@mui/material/Dialog';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/Add';
+import CancelIcon from '@mui/icons-material/Cancel'; // Para el modal de eliminación
+import Tooltip from '@mui/material/Tooltip';
+import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
-  import jsPDF from "jspdf";
-  import autoTable from "jspdf-autotable";
-  
-  interface Venta {
-    id: number;
-    codigo: string;
-    fecha: string;
-    nombre: string;
-    total: number;
-    estado: string;
-  }
-  
-  export default function VentasTable() {
-    const [ventas, setVentas] = useState<Venta[]>([
-      {
-        id: 1,
-        codigo: "V001",
-        fecha: "2025-04-06",
-        nombre: "Ana Pérez",
-        total: 150.5,
-        estado: "Completado",
-      },
-      {
-        id: 2,
-        codigo: "V002",
-        fecha: "2025-04-05",
-        nombre: "Carlos Gómez",
-        total: 250.0,
-        estado: "Pendiente",
-      },
-    ]);
+import Pagination from '@mui/material/Pagination';
 
-    const productosDisponibles = [
-      { nombre: "Producto 1", precio: 100, cantidad: 1 }, { nombre: "Producto 2", precio: 150, cantidad: 2 }
-    ]
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select, { SelectChangeEvent } from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
 
-    const nombreVendedor = "Tico Alvarez"
-  
-    const generarPDF = (venta: Venta) => {
-      const doc = new jsPDF();
-    
-      doc.setFontSize(18);
-      doc.text("Detalle de Venta", 14, 22);
-    
-      doc.setFontSize(12);
-      doc.text(`Código: ${venta.codigo}`, 14, 32);
-      doc.text(`Fecha: ${venta.fecha}`, 14, 40);
-      doc.text(`Cliente: ${venta.nombre}`, 14, 48);
-      doc.text(`Total: $${venta.total.toFixed(2)}`, 14, 56);
-      doc.text(`Estado: ${venta.estado}`, 14, 64);
-    
-      // Agregar una tabla ejemplo de productos (puedes modificarlo para usar los productos reales si los tienes guardados)
-      autoTable(doc, {
-        startY: 72,
-        head: [["Producto", "Precio", "Cantidad", "Subtotal"]],
-        body: [
-          ["Zapato Deportivo", "$50.00", "1", "$50.00"],
-          ["Botín Cuero", "$80.00", "1", "$80.00"],
-        ],
-      });
-    
-      doc.save(`venta-${venta.codigo}.pdf`);
-    };
+import { useAuth } from '../../context/authContext';
 
-    const [modalDetalleOpen, setModalDetalleOpen] = useState(false);
-    const [detalleActual, setDetalleActual] = useState<Venta | null>(null);
-    const [mensajeAlerta, setMensajeAlerta] = useState("");
-     const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-      const [ventaAEliminar, setVentaAEliminar] = useState<Venta | null>(null);
+const API_BASE_URL = 'https://conchasoft-api.onrender.com/api'; 
 
-    const abrirDetalle = (venta: Venta) => {
-      setDetalleActual(venta);
-      setModalDetalleOpen(true);
-    };
-    
-    const cerrarDetalle = () => {
-      setModalDetalleOpen(false);
-      setDetalleActual(null);
-    };
+/**
+ * @interface Venta
+ * @description Define la estructura de un objeto Venta.
+ */
+interface Venta {
+  id: number;
+  cliente: string;
+  fecha: string; // O Date, dependiendo de cómo lo manejes
+  total: number;
+  estado: string; // Por ejemplo: "Pendiente", "Completada", "Cancelada"
+  // Agrega aquí cualquier otro campo relevante que necesites para la edición o visualización
+}
 
-    const [modalAgregarOpen, setModalAgregarOpen] = useState(false);
-const [nuevaVenta, setNuevaVenta] = useState({
-  fecha: new Date().toISOString().split("T")[0],
-  tipoPago: "Efectivo",
-  cliente: "",
-  productos: [] as { nombre: string; precio: number; cantidad: number }[],
-  
-});
+export default function VentasTable() {
+  const [ventas, setVentas] = useState<Venta[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-const guardarVenta = () => {
-  if (!nuevaVenta.cliente.trim()) return;
+  const navigate = useNavigate();
+  const { token, isAuthenticated } = useAuth();
 
-  const nueva = {
-    id: ventas.length + 1,
-    codigo: `V00${ventas.length + 1}`,
-    fecha: nuevaVenta.fecha,
-    nombre: nuevaVenta.cliente,
-    total: total,
-    estado: "Completado",
-  };
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [ventaAEliminar, setVentaAEliminar] = useState<Venta | null>(null);
 
-  setVentas((prev) => [...prev, nueva]);
-
-  setMensajeAlerta("¡Venta creada correctamente.");
-
-  setTimeout(() => setMensajeAlerta(""), 3000);
-
-  setNuevaVenta({
-    fecha: new Date().toISOString().split("T")[0],
-    tipoPago: "Efectivo",
+  /**
+   * @state nuevaVenta
+   * @description Almacena los datos de la venta que se está creando o editando.
+   */
+  const [nuevaVenta, setNuevaVenta] = useState<Venta>({
+    id: 0,
     cliente: "",
-    productos: [],
+    fecha: new Date().toISOString().split('T')[0], // Inicializa con la fecha actual en formato YYYY-MM-DD
+    total: 0,
+    estado: "Pendiente", // Estado inicial predeterminado
   });
 
-  setModalAgregarOpen(false);
-};
+  const [modoEdicion, setModoEdicion] = useState(false);
+  const [ventaEditandoId, setVentaEditandoId] = useState<number | null>(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
-const agregarProducto = () => {
-  setNuevaVenta((prev) => ({
-    ...prev,
-    productos: [
-      ...prev.productos,
-      { nombre: "", precio: 0, cantidad: 1 },
-    ],
-  }));
-};
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-const eliminarProducto = (index: number) => {
-  setNuevaVenta((prev) => ({
-    ...prev,
-    productos: prev.productos.filter((_, i) => i !== index),
-  }));
-};
+  /**
+   * @function fetchVentas
+   * @description Obtiene las ventas desde la API, aplicando paginación y búsqueda.
+   */
+  const fetchVentas = async () => {
+    if (!isAuthenticated || !token) {
+      setLoading(false);
+      setError("No autenticado. Por favor, inicia sesión para ver las ventas.");
+      toast.info("Necesitas iniciar sesión para ver las ventas.");
+      return;
+    }
 
-const subtotal = nuevaVenta.productos.reduce(
-  (acc, p) => acc + p.precio * p.cantidad,
-  0
-);
-const iva = subtotal * 0.19;
-const total = subtotal + iva;
+    setLoading(true);
+    setError(null);
+    try {
+      const queryParams = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: itemsPerPage.toString(),
+      });
 
-const solicitarConfirmacionEliminacion = (venta: Venta) => {
-  setVentaAEliminar(venta);
-  setConfirmDialogOpen(true);
-};
+      if (searchTerm) {
+        queryParams.append('search', searchTerm);
+      }
 
-const confirmarAnulacion = () => {
-  if (ventaAEliminar) {
-    setVentas((prev) =>
-      prev.map((venta) =>
-        venta.id === ventaAEliminar.id ? { ...venta, estado: "Anulado" } : venta
-      )
-    );
-    setMensajeAlerta("Venta anulada correctamente.");
-    setTimeout(() => setMensajeAlerta(""), 3000);
-  }
-  setConfirmDialogOpen(false);
-  setVentaAEliminar(null);
-};
-  
+      const response = await fetch(`${API_BASE_URL}/ventas?${queryParams.toString()}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: `Error HTTP: ${response.status}` }));
+        throw new Error(errorData.error || `Error HTTP: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (Array.isArray(data.ventas)) {
+        setVentas(data.ventas);
+      } else {
+        setVentas([]);
+      }
+
+      setTotalItems(data.totalItems || 0);
+      setTotalPages(data.totalPages || 1);
+
+    } catch (err) {
+      setError(`No se pudieron cargar las ventas: ${err instanceof Error ? err.message : "Error desconocido"}`);
+      toast.error(`Error al cargar las ventas: ${err instanceof Error ? err.message : "Error desconocido"}`);
+      setVentas([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchVentas();
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, [isAuthenticated, token, currentPage, itemsPerPage]);
+
+  useEffect(() => {
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    debounceTimeoutRef.current = setTimeout(() => {
+      if (currentPage !== 1 && searchTerm !== "") {
+          setCurrentPage(1);
+      } else {
+          fetchVentas();
+      }
+    }, 500);
+
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, [searchTerm]);
+
+  // --- PAGINATION AND SEARCH HANDLERS ---
+  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+    setCurrentPage(value);
+  };
+
+  const handleChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+  };
+
+  const handleItemsPerPageChange = (event: SelectChangeEvent<number>) => {
+    setItemsPerPage(Number(event.target.value));
+    setCurrentPage(1);
+  };
+
+  /**
+   * @function abrirModal
+   * @description Abre el modal para agregar una nueva venta.
+   * Reinicia el estado `nuevaVenta` a valores predeterminados.
+   */
+  const abrirModal = () => {
+    setNuevaVenta({ 
+      id: 0, 
+      cliente: "", 
+      fecha: new Date().toISOString().split('T')[0], 
+      total: 0, 
+      estado: "Pendiente" 
+    });
+    setModoEdicion(false);
+    setVentaEditandoId(null);
+    setIsModalOpen(true);
+  };
+
+  /**
+   * @function abrirModalEditar
+   * @description Abre el modal para editar una venta existente.
+   * Carga los datos de la venta seleccionada en el estado `nuevaVenta`.
+   */
+  const abrirModalEditar = (ventaData: Venta) => {
+    setNuevaVenta({
+      id: ventaData.id,
+      cliente: ventaData.cliente,
+      fecha: ventaData.fecha.split('T')[0], // Asegura formato YYYY-MM-DD para input type="date"
+      total: ventaData.total,
+      estado: ventaData.estado,
+    });
+    setModoEdicion(true);
+    setVentaEditandoId(ventaData.id);
+    setIsModalOpen(true);
+  };
+
+  /**
+   * @function cerrarModal
+   * @description Cierra el modal y reinicia el estado `nuevaVenta`.
+   */
+  const cerrarModal = () => {
+    setIsModalOpen(false);
+    setNuevaVenta({ id: 0, cliente: "", fecha: new Date().toISOString().split('T')[0], total: 0, estado: "Pendiente" });
+    setModoEdicion(false);
+    setVentaEditandoId(null);
+  };
+
+  /**
+   * @function handleChange
+   * @description Maneja los cambios en los inputs del formulario del modal.
+   */
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
+    const { name, value, type } = e.target;
+    // Si es un input de tipo number, convierte el valor a número, si no es válido, usa 0
+    const val = type === 'number' ? (parseFloat(value) || 0) : value;
+    setNuevaVenta((prev) => ({
+      ...prev,
+      [name]: val,
+    }));
+  };
+
+  /**
+   * @function guardarVenta
+   * @description Guarda (crea o actualiza) una venta en la API.
+   */
+  const guardarVenta = async () => {
+    if (!nuevaVenta.cliente.trim() || !nuevaVenta.fecha || nuevaVenta.total <= 0) {
+      toast.warn("Por favor, completa todos los campos requeridos (Cliente, Fecha, Total > 0).");
+      return;
+    }
+    if (!isAuthenticated || !token) {
+      toast.error("No estás autorizado para guardar ventas.");
+      return;
+    }
+
+    try {
+      let method: string;
+      let url: string;
+      let successMessage: string;
+
+      const payload = {
+        cliente: nuevaVenta.cliente,
+        fecha: nuevaVenta.fecha,
+        total: nuevaVenta.total,
+        estado: nuevaVenta.estado,
+      };
+
+      if (modoEdicion && ventaEditandoId !== null) {
+        method = 'PUT';
+        url = `${API_BASE_URL}/ventas/${ventaEditandoId}`;
+        successMessage = "Venta actualizada correctamente.";
+      } else {
+        method = 'POST';
+        url = `${API_BASE_URL}/ventas`;
+        successMessage = "Venta registrada correctamente.";
+      }
+
+      const response = await fetch(url, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: `Error HTTP: ${response.status}` }));
+        throw new Error(errorData.error || `Error al guardar venta: ${response.status}`);
+      }
+
+      await fetchVentas();
+      toast.success(successMessage);
+      cerrarModal();
+    } catch (err) {
+      toast.error(`Error al guardar la venta: ${err instanceof Error ? err.message : "Error desconocido"}`);
+    }
+  };
+
+  /**
+   * @function solicitarConfirmacionEliminacion
+   * @description Abre el diálogo de confirmación antes de eliminar una venta.
+   */
+  const solicitarConfirmacionEliminacion = (venta: Venta) => {
+    setVentaAEliminar(venta);
+    setConfirmDialogOpen(true);
+  };
+
+  /**
+   * @function confirmarEliminacion
+   * @description Confirma y elimina una venta de la API.
+   */
+  const confirmarEliminacion = async () => {
+    if (!isAuthenticated || !token) {
+      toast.error("No estás autorizado para eliminar ventas.");
+      setConfirmDialogOpen(false);
+      return;
+    }
+
+    if (ventaAEliminar) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/ventas/${ventaAEliminar.id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ message: `Error HTTP: ${response.status}` }));
+          throw new Error(errorData.error || `Error al eliminar venta: ${response.status}`);
+        }
+
+        await fetchVentas();
+        toast.success("Venta eliminada correctamente.");
+      } catch (err) {
+        toast.error(`Error al eliminar la venta: ${err instanceof Error ? err.message : "Error desconocido"}`);
+      } finally {
+        setConfirmDialogOpen(false);
+        setVentaAEliminar(null);
+      }
+    }
+  };
+
+  // --- Component Rendering ---
+  if (loading) {
     return (
-      <div className="overflow-hidden rounded-xl border border-gray-400 bg-gray-200 dark:border-white/[0.05] dark:bg-white/[0.03]">
-        <div className="p-4 flex items-center justify-between flex-wrap gap-4">
-  <Button
-    variant="contained"
-    color="primary"
-    startIcon={<AddIcon />}
-    onClick={() => setModalAgregarOpen(true)}
-    sx={{ textTransform: 'none' }}
-  >
-    Agregar Venta
-  </Button>
+      <div className="flex justify-center items-center h-48">
+        <p className="text-gray-600 dark:text-gray-300">Cargando ventas...</p>
+      </div>
+    );
+  }
 
-  <input
-    type="text"
-    placeholder="Buscar"
-    className="border border-gray-400 bg-white rounded px-4 py-2 w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-gray-800 dark:text-white dark:border-gray-600" // Suponiendo que tenés un filtro
-  />
-</div>
-{mensajeAlerta && (
-        <div className="mx-4 mb-4 text-sm text-green-700 bg-green-100 border border-green-300 rounded p-2 dark:bg-green-900/20 dark:text-green-400 dark:border-green-600">
-          {mensajeAlerta}
+  if (error) {
+    return (
+      <div className="flex justify-center items-center h-48">
+        <p className="text-red-600 dark:text-red-400">Error: {error}</p>
+      </div>
+    );
+  }
+
+  if (!Array.isArray(ventas)) {
+    return (
+      <div className="flex justify-center items-center h-48">
+        <p className="text-red-600 dark:text-red-400">
+          Error interno: Los datos de ventas no son válidos. Por favor, contacta a soporte.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-400 bg-gray-200 dark:border-white/[0.05] dark:bg-white/[0.03]">
+      <div className="p-4 flex flex-col sm:flex-row items-center justify-end flex-wrap gap-4">
+        <div className="mr-auto">
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={abrirModal}
+            sx={{ textTransform: 'none' }}
+          >
+            Registrar Nueva Venta
+          </Button>
         </div>
-      )}
-        <div className="max-w-full overflow-x-auto">
-          <Table>
-            <TableHeader className="border-b border-gray-400 dark:border-white/[0.05]">
+
+        <div className="flex items-center gap-4 w-full sm:w-auto">
+          <input
+            type="text"
+            placeholder="Buscar venta por cliente, estado..."
+            value={searchTerm}
+            onChange={handleChangeSearch}
+            className="border border-gray-400 bg-white rounded px-4 py-2 flex-grow focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-gray-800 dark:text-white dark:border-gray-600"
+          />
+
+          <FormControl sx={{ minWidth: 120 }} size="small">
+            <InputLabel id="items-per-page-label">Elementos</InputLabel>
+            <Select
+              labelId="items-per-page-label"
+              id="items-per-page-select"
+              value={itemsPerPage}
+              label="Elementos"
+              onChange={handleItemsPerPageChange}
+              sx={{
+                color: 'black',
+                '.MuiOutlinedInput-notchedOutline': {
+                  borderColor: 'gray',
+                },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                  borderColor: 'var(--brand-500)',
+                },
+                '.MuiSvgIcon-root': {
+                  color: 'black',
+                },
+                '.MuiInputLabel-root': {
+                  color: 'black',
+                },
+                '.MuiInputLabel-root.Mui-focused': {
+                  color: 'var(--brand-500)',
+                },
+              }}
+            >
+              <MenuItem value={5}>5</MenuItem>
+              <MenuItem value={10}>10</MenuItem>
+              <MenuItem value={20}>20</MenuItem>
+              <MenuItem value={50}>50</MenuItem>
+            </Select>
+          </FormControl>
+        </div>
+      </div>
+
+      <div className="max-w-full overflow-x-auto">
+        <Table>
+          <TableHeader className="border-b border-gray-400 dark:border-white/[0.05]">
+            <TableRow>
+              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
+                ID Venta
+              </TableCell>
+              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
+                Cliente
+              </TableCell>
+              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
+                Fecha
+              </TableCell>
+              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
+                Total
+              </TableCell>
+              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
+                Estado
+              </TableCell>
+              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
+                Acciones
+              </TableCell>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="divide-y divide-gray-400 dark:divide-white/[0.05]">
+            {ventas.length === 0 ? (
               <TableRow>
-                <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3">
-                  Código
-                </TableCell>
-                <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3">
-                  Fecha
-                </TableCell>
-                <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3">
-                  Cliente
-                </TableCell>
-                <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3">
-                  Total
-                </TableCell>
-                <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3">
-                  Estado
-                </TableCell>
-                <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3">
-                  Acciones
+                <TableCell colSpan={6} className="text-center py-4 text-gray-600 dark:text-gray-400">
+                  No hay ventas disponibles.
                 </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody className="divide-y divide-gray-400 dark:divide-white/[0.05]">
-              {ventas.map((venta) => (
+            ) : (
+              ventas.map((venta) => (
                 <TableRow key={venta.id}>
-                  <TableCell className="px-5 py-4 text-theme-sm text-gray-900 dark:text-white/90">
-                    {venta.codigo}
+                  <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">
+                    {venta.id}
                   </TableCell>
-                  <TableCell className="px-5 py-4 text-theme-sm text-gray-900 dark:text-gray-100">
-                    {venta.fecha}
+                  <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">
+                    {venta.cliente}
                   </TableCell>
-                  <TableCell className="px-5 py-4 text-theme-sm text-gray-900 dark:text-gray-100">
-                    {venta.nombre}
+                  <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">
+                    {new Date(venta.fecha).toLocaleDateString()}
                   </TableCell>
-                  <TableCell className="px-5 py-4 text-theme-sm text-gray-900 dark:text-gray-100">
+                  <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">
                     ${venta.total.toFixed(2)}
                   </TableCell>
-                  <TableCell className="px-5 py-4 text-theme-sm text-gray-900 dark:text-gray-100">
+                  <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">
                     {venta.estado}
                   </TableCell>
                   <TableCell className="px-5 py-4 space-x-2">
-                  <Tooltip title="Ver Detalle">
-                        <IconButton
-                        color="secondary"
-                        onClick={() => abrirDetalle(venta)}>
-                          <VisibilityIcon/>
-                        </IconButton>
-                   </Tooltip>
-                    <Tooltip title="Descargar PDF">
+                    <Tooltip title="Ver Detalles">
                       <IconButton
-                      color="primary"
-                      onClick={() => generarPDF(venta)}
+                        color="info"
+                        onClick={() => navigate(`/ventas/${venta.id}`)}
                       >
-                        <PictureAsPdfIcon />
+                        <VisibilityIcon />
                       </IconButton>
                     </Tooltip>
-                      
-                   <Tooltip title="Anular Venta">
-                    <IconButton
-                    color="error"
-                    onClick={() => solicitarConfirmacionEliminacion(venta)}
-                    disabled={venta.estado === "Anulado"}>
-                      <CancellIcon />
-                    </IconButton>
-                   </Tooltip>
+                    <Tooltip title="Editar">
+                      <IconButton
+                        color="primary"
+                        onClick={() => abrirModalEditar(venta)}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Eliminar">
+                      <IconButton
+                        color="error"
+                        onClick={() => solicitarConfirmacionEliminacion(venta)}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
                   </TableCell>
                 </TableRow>
-              ))}
-
-<Modal isOpen={modalDetalleOpen} onClose={cerrarDetalle}>
-  <h2 className="text-2xl font-bold mb-6 text-black dark:text-white">
-    Detalle del Cliente
-  </h2>
-
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    {[
-      ["Código", detalleActual?.codigo],
-      ["Fecha", detalleActual?.fecha],
-      ["Cliente", detalleActual?.nombre],
-      ["Total", detalleActual?.total],
-      ["Estado", detalleActual?.estado],
-      ["Vendedor", nombreVendedor],
-    ].map(([label, value], idx) => (
-      <div
-        key={idx}
-        className="p-4 border border-gray-300 bg-gray-50 rounded-lg shadow-sm text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
-      >
-        <p className="text-sm font-medium mb-1">{label}</p>
-        <p className="font-semibold">{value || "—"}</p>
+              ))
+            )}
+          </TableBody>
+        </Table>
       </div>
-    ))}
-  </div>
 
-  <div className="mt-8 flex justify-end">
-    <button
-      onClick={cerrarDetalle}
-      className="px-5 py-2 bg-brand-500 text-white rounded hover:bg-brand-600 transition-all dark:bg-brand-600 dark:hover:bg-brand-500"
-    >
-      Cerrar
-    </button>
-  </div>
-</Modal>
-<Modal isOpen={modalAgregarOpen} onClose={() => setModalAgregarOpen(false)}>
-  <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">Agregar Venta</h2>
+      {(totalPages > 1 || totalItems > 0) && (
+        <div className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-4">
+            {totalItems > 0 && (
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                Mostrando {ventas.length} de {totalItems} ventas
+              </p>
+            )}
+          </div>
 
-  {/* Contenido con scroll limitado */}
-  <div className="space-y-4 text-base text-gray-700 dark:text-gray-300 overflow-y-auto max-h-[60vh] pr-2">
+          {totalPages > 1 && (
+            <Pagination
+              count={totalPages}
+              page={currentPage}
+              onChange={handlePageChange}
+              color="primary"
+              showFirstButton
+              showLastButton
+              sx={{
+                '& .MuiPaginationItem-root': {
+                  color: 'black',
+                  '&.Mui-selected': {
+                    backgroundColor: 'var(--brand-500)',
+                    color: 'white',
+                    '&:hover': {
+                      backgroundColor: 'var(--brand-600)',
+                    },
+                  },
+                  '&:hover': {
+                    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                  },
+                },
+                '.MuiPaginationItem-ellipsis': {
+                  color: 'black',
+                },
+                '.MuiSvgIcon-root': {
+                  color: 'black',
+                },
+                '.MuiButtonBase-root.Mui-disabled': {
+                  opacity: 0.5,
+                  pointerEvents: 'none',
+                },
+              }}
+            />
+          )}
+        </div>
+      )}
 
-    {/* Datos de la venta */}
-    <div className="grid grid-cols-2 gap-4">
-      <div>
-        <label>Fecha:</label>
-        <input
-          type="date"
-          className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white"
-          value={nuevaVenta.fecha}
-          onChange={(e) =>
-            setNuevaVenta({ ...nuevaVenta, fecha: e.target.value })
-          }
-        />
-      </div>
-      <div>
-        <label>Tipo de Pago:</label>
-        <select
-          className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white"
-          value={nuevaVenta.tipoPago}
-          onChange={(e) =>
-            setNuevaVenta({ ...nuevaVenta, tipoPago: e.target.value })
-          }
-        >
-          <option>Efectivo</option>
-          <option>Tarjeta</option>
-          <option>Transferencia</option>
-        </select>
-      </div>
-      <div className="col-span-2">
-        <label>Cliente:</label>
-        <input
-          type="text"
-          className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white"
-          value={nuevaVenta.cliente}
-          onChange={(e) =>
-            setNuevaVenta({ ...nuevaVenta, cliente: e.target.value })
-          }
-        />
-      </div>
-      <div className="col-span-2">
-        <label>Vendedor:</label>
-        <input
-          type="text"
-          className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white"
-          value={nombreVendedor}
-          disabled
-        />
-      </div>
-    </div>
+      {/* Modal para Agregar/Editar Venta */}
+      <Dialog open={isModalOpen} onClose={cerrarModal} maxWidth="sm" fullWidth>
+        <DialogTitle className="text-xl font-semibold text-gray-900 dark:text-white">
+          {modoEdicion ? "Editar Venta" : "Registrar Nueva Venta"}
+        </DialogTitle>
 
-    {/* Productos */}
-    <div>
-      <h3 className="font-semibold mb-2">Productos:</h3>
-      {nuevaVenta.productos.map((prod, i) => (
-        <div key={i} className="flex items-center gap-2 mb-2">
-          <select
-            className="w-full border border-gray-400 p-1 bg-gray-200 rounded dark:bg-gray-800 dark:text-white"
-            value={prod.nombre}
-            onChange={(e) => {
-              const seleccionado = productosDisponibles.find(p => p.nombre === e.target.value);
-              setNuevaVenta((prev) => {
-                const productos = [...prev.productos];
-                productos[i].nombre = seleccionado?.nombre || "";
-                productos[i].precio = seleccionado?.precio || 0;
-                return { ...prev, productos };
-              });
-            }}
-          >
-            <option value="">Seleccionar producto</option>
-            {productosDisponibles.map((p, idx) => (
-              <option key={idx} value={p.nombre}>{p.nombre}</option>
-            ))}
-          </select>
-          <input
-            type="number"
-            className="w-full border border-gray-400 p-1 bg-gray-200 rounded dark:bg-gray-800 dark:text-white"
-            placeholder="Precio"
-            value={prod.precio}
-            disabled
-          />
-          <input
-            type="number"
-            className="w-full border border-gray-400 p-1 bg-gray-200 rounded dark:bg-gray-800 dark:text-white"
-            placeholder="Cantidad"
-            value={prod.cantidad}
-            onChange={(e) =>
-              setNuevaVenta((prev) => {
-                const productos = [...prev.productos];
-                productos[i].cantidad = parseInt(e.target.value) || 0;
-                return { ...prev, productos };
-              })
-            }
-          />
+        <DialogContent className="pt-2 space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Cliente <span className="text-error-500">*</span>
+            </label>
+            <input
+              name="cliente"
+              type="text"
+              value={nuevaVenta.cliente}
+              onChange={handleChange}
+              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Fecha <span className="text-error-500">*</span>
+            </label>
+            <input
+              name="fecha"
+              type="date"
+              value={nuevaVenta.fecha}
+              onChange={handleChange}
+              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Total <span className="text-error-500">*</span>
+            </label>
+            <input
+              name="total"
+              type="number"
+              step="0.01" // Permite decimales
+              value={nuevaVenta.total}
+              onChange={handleChange}
+              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Estado <span className="text-error-500">*</span>
+            </label>
+            <select
+              name="estado"
+              value={nuevaVenta.estado}
+              onChange={handleChange}
+              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="Pendiente">Pendiente</option>
+              <option value="Completada">Completada</option>
+              <option value="Cancelada">Cancelada</option>
+            </select>
+          </div>
+        </DialogContent>
+
+        <DialogActions className="flex justify-end gap-3 px-6 pb-4">
           <button
-            onClick={() => eliminarProducto(i)}
-            className="text-red-500 font-bold"
+            onClick={cerrarModal}
+            className="px-5 py-2 rounded-full bg-gray-400 text-white hover:bg-gray-500 transition dark:bg-gray-600"
           >
-            X
+            Cancelar
           </button>
-        </div>
-      ))}
-      <button
-        onClick={agregarProducto}
-        className="px-2 py-1 bg-blue-500 text-white rounded"
-      >
-        Agregar Producto
-      </button>
-    </div>
+          <button
+            onClick={guardarVenta}
+            className="px-5 py-2 rounded-full bg-brand-500 text-white hover:bg-brand-600 transition"
+          >
+            {modoEdicion ? "Actualizar" : "Guardar"}
+          </button>
+        </DialogActions>
+      </Dialog>
 
-    {/* Totales */}
-    <div className="mt-4">
-      <p>Subtotal: ${subtotal.toFixed(2)}</p>
-      <p>IVA (19%): ${iva.toFixed(2)}</p>
-      <p className="font-bold">Total: ${total.toFixed(2)}</p>
-    </div>
-  </div>
-
-  {/* Botones fijos debajo del contenido scrollable */}
-  <div className="mt-6 flex justify-end gap-2 border-t pt-4">
-    <button
-      onClick={() => setModalAgregarOpen(false)}
-      className="px-4 py-2 bg-gray-500 text-white rounded dark:bg-gray-500 dark:text-white"
-    >
-      Cancelar
-    </button>
-    <button
-      onClick={guardarVenta}
-      className="px-4 py-2 bg-brand-500 text-white rounded hover:bg-brand-600"
-    >
-      Guardar Venta
-    </button>
-  </div>
-</Modal>
-<Dialog
-  open={confirmDialogOpen}
-  onClose={() => setConfirmDialogOpen(false)}
-  maxWidth="sm"
-  fullWidth
->
-  <DialogTitle className="bg-red-500 text-white font-bold text-xl">
-    <div className="flex items-center">
-      <DeleteIcon className="mr-2" />
-      Confirmar anulación
-    </div>
-  </DialogTitle>
-  <DialogContent className="bg-gray-100">
-    <DialogContentText className="text-lg text-gray-700">
-      ¿Estás seguro de que deseas anular la venta{' '}
-      <strong className="font-semibold text-red-600">{ventaAEliminar?.codigo}</strong>? Esta acción no se puede deshacer.
-    </DialogContentText>
-  </DialogContent>
-  <DialogActions className="bg-gray-50 p-4">
-    <Tooltip title="Cancelar">
-      <IconButton
-        onClick={() => setConfirmDialogOpen(false)}
-        color="default"
-        className="hover:bg-gray-200 rounded-full"
+      {/* Diálogo de Confirmación de Eliminación */}
+      <Dialog
+        open={confirmDialogOpen}
+        onClose={() => setConfirmDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
       >
-        <CancellIcon />
-      </IconButton>
-    </Tooltip>
-    <Tooltip title="Eliminar">
-      <Button
-        onClick={confirmarAnulacion}
-        color="error"
-        variant="contained"
-        startIcon={<DeleteIcon />}
-        className="capitalize font-medium hover:bg-red-600"
-      >
-        Anular
-      </Button>
-    </Tooltip>
-  </DialogActions>
-</Dialog>
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    );
-  }
+        <DialogTitle className="bg-red-500 text-white font-bold text-xl">
+          <div className="flex items-center">
+            <DeleteIcon className="mr-2" />
+            Confirmar eliminación
+          </div>
+        </DialogTitle>
+        <DialogContent className="bg-gray-100">
+          <DialogContentText className="text-lg text-gray-700">
+            ¿Estás seguro de que deseas eliminar la venta del cliente{' '}
+            <strong className="font-semibold text-red-600">{ventaAEliminar?.cliente}</strong>
+            {' '}con ID <strong className="font-semibold text-red-600">{ventaAEliminar?.id}</strong>? Esta acción no se puede deshacer.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions className="bg-gray-50 p-4">
+          <Tooltip title="Cancelar">
+            <IconButton
+              onClick={() => setConfirmDialogOpen(false)}
+              color="default"
+              className="hover:bg-gray-200 rounded-full"
+            >
+              <CancelIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Eliminar">
+            <Button
+              onClick={confirmarEliminacion}
+              color="error"
+              variant="contained"
+              startIcon={<DeleteIcon />}
+              className="capitalize font-medium hover:bg-red-600"
+            >
+              Eliminar
+            </Button>
+          </Tooltip>
+        </DialogActions>
+      </Dialog>
+    </div>
+  );
+}

@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from 'react-toastify';
-// Make sure to import react-toastify CSS in your main file (e.g., App.tsx or index.tsx)
-// import 'react-toastify/dist/ReactToastify.css';
 
 import {
   Table,
@@ -27,18 +25,14 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import Pagination from '@mui/material/Pagination';
 
-// --- MATERIAL-UI IMPORTS ---
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select, { SelectChangeEvent } from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 
-
-// --- Import your useAuth hook ---
 import { useAuth } from '../../context/authContext';
 
-// Define your API base URL
-const API_BASE_URL = 'https://conchasoft-api.onrender.com/api'; // VERIFY THIS IS YOUR CORRECT BACKEND URL!
+const API_BASE_URL = 'https://conchasoft-api.onrender.com/api'; 
 
 /**
  * @interface Rol
@@ -78,23 +72,18 @@ export default function RolesTable() {
 
   const { token, isAuthenticated } = useAuth();
 
-  // --- PAGINATION AND SEARCH STATES ---
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10); // Now selectable
   const [searchTerm, setSearchTerm] = useState("");
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
-  // Ref for debounce timer
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
   /**
    * @function fetchRoles
-   * @description Fetches the list of roles from the API, applying pagination and search filters.
-   * Requires authentication.
-   * This function is now memoized using useCallback in practice, but directly here for simplicity
-   * due to its dependencies handled by useEffect.
+   * @description 
    */
   const fetchRoles = async () => {
     if (!isAuthenticated || !token) {
@@ -107,7 +96,6 @@ export default function RolesTable() {
     setLoading(true);
     setError(null);
     try {
-      // Build query parameters for the API
       const queryParams = new URLSearchParams({
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
@@ -126,7 +114,7 @@ export default function RolesTable() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: `Error HTTP: ${response.status}` }));
-        throw new Error(errorData.message || `Error HTTP: ${response.status}`);
+        throw new Error(errorData.error || `Error HTTP: ${response.status}`);
       }
 
       const data = await response.json();
@@ -134,7 +122,6 @@ export default function RolesTable() {
       if (Array.isArray(data.roles)) {
         setRoles(data.roles);
       } else {
-        console.warn("API returned data.roles not as an array:", data.roles);
         setRoles([]); // Set to an empty array to avoid TypeError
       }
 
@@ -142,7 +129,6 @@ export default function RolesTable() {
       setTotalPages(data.totalPages || 1);
 
     } catch (err) {
-      console.error("Error al cargar roles:", err);
       setError(`No se pudieron cargar los roles: ${err instanceof Error ? err.message : "Error desconocido"}`);
       toast.error(`Error al cargar los roles: ${err instanceof Error ? err.message : "Error desconocido"}`);
       setRoles([]); // Ensure 'roles' is an empty array in case of fetch error
@@ -151,10 +137,8 @@ export default function RolesTable() {
     }
   };
 
-  // --- Main useEffect for fetching data based on pagination/itemsPerPage ---
   useEffect(() => {
     fetchRoles();
-    // Cleanup function for when component unmounts or dependencies change
     return () => {
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current);
@@ -169,10 +153,7 @@ export default function RolesTable() {
     }
 
     debounceTimeoutRef.current = setTimeout(() => {
-      // Only call fetchRoles if the component is still mounted and search term changed
-      // We explicitly call fetchRoles here, it will use the current searchTerm from state
-      // The currentPage will be reset in handleSearchChange if the search term is non-empty.
-      // If searchTerm becomes empty, fetchRoles will naturally run without the search filter.
+
       if (currentPage !== 1 && searchTerm !== "") { // If search term is active and not on page 1, reset page
           setCurrentPage(1); // This will trigger the main useEffect -> fetchRoles
       } else {
@@ -242,7 +223,7 @@ export default function RolesTable() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: `Error HTTP: ${response.status}` }));
-        throw new Error(errorData.message || `Error al cambiar estado: ${response.status}`);
+        throw new Error(errorData.error || `Error al cambiar estado: ${response.status}`);
       }
 
       setRoles((prev) =>
@@ -252,7 +233,6 @@ export default function RolesTable() {
       );
       toast.success("Estado del rol actualizado correctamente.");
     } catch (err) {
-      console.error("Error al cambiar el estado del rol:", err);
       toast.error(`Error al cambiar el estado del rol: ${err instanceof Error ? err.message : "Error desconocido"}`);
     }
   };
@@ -359,14 +339,13 @@ export default function RolesTable() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: `Error HTTP: ${response.status}` }));
-        throw new Error(errorData.message || `Error al guardar rol: ${response.status}`);
+        throw new Error(errorData.error || `Error al guardar rol: ${response.status}`);
       }
 
       await fetchRoles();
       toast.success(successMessage);
       cerrarModal();
     } catch (err) {
-      console.error("Error al guardar el rol:", err);
       toast.error(`Error al guardar el rol: ${err instanceof Error ? err.message : "Error desconocido"}`);
     }
   };
@@ -402,13 +381,12 @@ export default function RolesTable() {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ message: `Error HTTP: ${response.status}` }));
-          throw new Error(errorData.message || `Error al eliminar rol: ${response.status}`);
+          throw new Error(errorData.error || `Error al eliminar rol: ${response.status}`);
         }
 
         await fetchRoles();
         toast.success("Rol eliminado correctamente.");
       } catch (err) {
-        console.error("Error al eliminar el rol:", err);
         toast.error(`Error al eliminar el rol: ${err instanceof Error ? err.message : "Error desconocido"}`);
       } finally {
         setConfirmDialogOpen(false);
@@ -436,7 +414,6 @@ export default function RolesTable() {
 
   // Defensive check for `roles` array
   if (!Array.isArray(roles)) {
-    console.error("Critical error: 'roles' is not an array at render time.", roles);
     return (
         <div className="flex justify-center items-center h-48">
             <p className="text-red-600 dark:text-red-400">
@@ -649,68 +626,70 @@ export default function RolesTable() {
         </div>
       )}
 
-      <Modal isOpen={isModalOpen} handleClose={cerrarModal}>
-        <h2 className="text-lg font-bold mb-4">
-          {modoEdicion ? "Editar rol" : "Agregar nuevo rol"}
-        </h2>
+      <Dialog open={isModalOpen} onClose={cerrarModal} maxWidth="sm" fullWidth>
+  <DialogTitle className="text-xl font-semibold text-gray-900 dark:text-white">
+    {modoEdicion ? "Editar Rol" : "Agregar Nuevo Rol"}
+  </DialogTitle>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Nombre <span className="text-error-500">*</span>
-            </label>
-            <input
-              name="rol"
-              type="text"
-              value={nuevoRol.rol}
-              onChange={handleChange}
-              className="w-full border border-gray-400 bg-gray-200 px-3 py-2 rounded dark:bg-gray-800 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Descripción <span className="text-error-500">*</span>
-            </label>
-            <textarea
-              name="descripcion"
-              value={nuevoRol.descripcion}
-              onChange={handleChange}
-              className="w-full border border-gray-400 bg-gray-200 px-3 py-2 rounded dark:bg-gray-800 dark:text-white"
-            />
-          </div>
-          {modoEdicion && (
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Estado
-              </label>
-              <input
-                type="checkbox"
-                name="estado"
-                checked={nuevoRol.estado}
-                onChange={handleChange}
-                className="form-checkbox h-5 w-5 text-green-600"
-              />
-              <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                {nuevoRol.estado ? "Activo" : "Inactivo"}
-              </span>
-            </div>
-          )}
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={cerrarModal}
-              className="px-4 py-2 bg-gray-500 text-white rounded dark:bg-gray-500 dark:text-white"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={guardarRol}
-              className="px-4 py-2 bg-brand-500 text-white rounded hover:bg-brand-600"
-            >
-              {modoEdicion ? "Actualizar" : "Guardar"}
-            </button>
-          </div>
-        </div>
-      </Modal>
+  <DialogContent className="pt-2 space-y-5">
+    <div>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        Nombre <span className="text-error-500">*</span>
+      </label>
+      <input
+        name="rol"
+        type="text"
+        value={nuevoRol.rol}
+        onChange={handleChange}
+        className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+      />
+    </div>
+
+    <div>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        Descripción <span className="text-error-500">*</span>
+      </label>
+      <textarea
+        name="descripcion"
+        value={nuevoRol.descripcion}
+        onChange={handleChange}
+        rows={3}
+        className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+      />
+    </div>
+
+    {modoEdicion && (
+      <div className="flex items-center gap-3">
+        <input
+          type="checkbox"
+          name="estado"
+          checked={nuevoRol.estado}
+          onChange={handleChange}
+          className="h-5 w-5 rounded text-green-600 dark:bg-gray-800 dark:border-gray-600"
+        />
+        <span className="text-sm text-gray-700 dark:text-gray-300">
+          {nuevoRol.estado ? "Activo" : "Inactivo"}
+        </span>
+      </div>
+    )}
+  </DialogContent>
+
+  <DialogActions className="flex justify-end gap-3 px-6 pb-4">
+    <button
+      onClick={cerrarModal}
+      className="px-5 py-2 rounded-full bg-gray-400 text-white hover:bg-gray-500 transition dark:bg-gray-600"
+    >
+      Cancelar
+    </button>
+    <button
+      onClick={guardarRol}
+      className="px-5 py-2 rounded-full bg-brand-500 text-white hover:bg-brand-600 transition"
+    >
+      {modoEdicion ? "Actualizar" : "Guardar"}
+    </button>
+  </DialogActions>
+</Dialog>
+
 
       <Dialog
         open={confirmDialogOpen}

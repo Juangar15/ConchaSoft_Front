@@ -12,7 +12,7 @@ export default function Roles() {
       />
       <PageBreadcrumb pageTitle="ConchaSoft - Permisos" />
       <div className="space-y-6">
-        <ComponentCard title="Permisos">
+        <ComponentCard title="Gestión de Permisos">
           <PermisosOne />
         </ComponentCard>
       </div>

@@ -344,7 +344,7 @@ export default function UsuariosTable() {
         </Table>
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={cerrarModal}>
+      <Modal isOpen={isModalOpen} handleClose={cerrarModal}>
   <h2 className="text-lg font-bold mb-4">
     {modoEdicion ? "Editar usuario" : "Agregar nuevo usuario"}
   </h2>
@@ -465,7 +465,7 @@ export default function UsuariosTable() {
 </Modal>
 
 
-<Modal isOpen={modalDetalleOpen} onClose={cerrarDetalle}>
+<Modal isOpen={modalDetalleOpen} handleClose={cerrarDetalle}>
   <h2 className="text-2xl font-bold mb-6 text-black dark:text-white">
     Detalle del Usuario
   </h2>

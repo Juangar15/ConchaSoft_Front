@@ -14,7 +14,6 @@ const Modal: React.FC<ModalProps> = ({ isOpen, children, handleClose, maxWidthCl
 
     const portalRoot = document.getElementById('modal-root');
     if (!portalRoot) {
-        console.error("No se encontró el elemento 'modal-root'. Asegúrate de que existe en tu index.html");
         return null;
     }
 

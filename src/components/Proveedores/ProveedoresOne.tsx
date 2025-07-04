@@ -1,531 +1,529 @@
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableRow,
-} from "../ui/table";
-import Button from "@mui/material/Button"
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { toast } from 'react-toastify';
+
+// --- Importaciones de Material-UI (MUI) ---
+import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
-import EditIcon from '@mui/icons-material/Edit'
-import CancellIcon from '@mui/icons-material/Cancel'
-import DeleteIcon from '@mui/icons-material/Delete'
-import VisibilityIcon from '@mui/icons-material/Visibility'
-import AddIcon from '@mui/icons-material/Add'
-import Tooltip from '@mui/material/Tooltip'
-import Modal from "../ui/modal/Modal";
-import { useState } from "react";
+import EditIcon from '@mui/icons-material/Edit';
+import CancelIcon from '@mui/icons-material/Cancel';
+import DeleteIcon from '@mui/icons-material/Delete';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import AddIcon from '@mui/icons-material/Add';
+import Tooltip from '@mui/material/Tooltip';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
+import Pagination from '@mui/material/Pagination';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select, { SelectChangeEvent } from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import TextField from '@mui/material/TextField';
 
+// --- Importaciones de Contexto y UI Personalizada ---
+import { useAuth } from "../../context/authContext";
+import Modal from "../ui/modal/Modal";
+
+// --- Interfaces ---
 interface Proveedor {
-  id: number;
-  nombre: string;
-  correo: string;
-  direccion: string;
-  telefono: string;
-  celular?: string;  // nuevo campo
-  ciudad?: string;   // nuevo campo
-  departamento?: string;  // nuevo campo
-  fechaNacimiento?: string; 
-  tipoDocumento?: string;
-  documento?: string; // nuevo campo
-  rh?: string;  // nuevo campo
-  genero?: string;  // nuevo campo
-  tipo: string;
-  activo: boolean;
+    id: number;
+    tipo_proveedor: 'persona_natural' | 'empresa';
+    nombre_comercial: string;
+    razon_social: string | null;
+    nombre_contacto: string | null;
+    tipo_documento: string;
+    documento: string;
+    correo: string;
+    telefono: string;
+    direccion: string;
+    departamento: string;
+    municipio: string;
+    barrio: string | null;
+    estado: 0 | 1;
 }
 
-export default function ProveedoresTable() {
-  const [proveedores, setProveedores] = useState<Proveedor[]>([
-    {
-      id: 1,
-      nombre: "Ana López",
-      correo: "ana@example.com",
-      direccion: "Calle Falsa 123",
-      telefono: "123456789",
-      celular: "3001234567",
-      ciudad: "Bogotá",
-      departamento: "Cundinamarca",
-      fechaNacimiento: "1990-05-12",
-      rh: "O+",
-      genero: "Femenino",
-      tipoDocumento: "CC",
-      documento: "1020304050",
-      tipo: "Natural",
-      activo: true,
-    },
-    {
-      id: 2,
-      nombre: "Carlos Pérez",
-      correo: "carlos@example.com",
-      direccion: "Av. Siempre Viva 742",
-      telefono: "987654321",
-      celular: "3109876543",
-      ciudad: "Medellín",
-      departamento: "Antioquia",
-      fechaNacimiento: "1985-08-25",
-      rh: "A-",
-      genero: "Masculino",
-      tipoDocumento: "TI",
-      documento: "9876543210",
-      tipo: "Juridico",
-      activo: true,
-    },
-  ]);
+// Interfaces adaptadas para la nueva API (api-colombia.com)
+interface Departamento {
+    id: number;
+    name: string;
+}
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-    const [nuevoProveedor, setNuevoProveedor] = useState({
-      nombre: "",
-      correo: "",
-      direccion: "",
-      telefono: "",
-      celular: "",  // nuevo campo
-      ciudad: "",   // nuevo campo
-      departamento: "",  // nuevo campo
-      fechaNacimiento: "",
-      tipoDocumento: "",
-      documento: "",  // nuevo campo
-      rh: "",  // nuevo campo
-      genero: "",
-      tipo: "",
-    });
+interface Municipio {
+    id: number;
+    name: string;
+}
+
+// --- URLs de API ---
+const API_BASE_URL = 'https://conchasoft-api.onrender.com/api/proveedores';
+// Se usan las URLs de api-colombia.com
+const API_COLOMBIA_DEPARTMENTS_URL = 'https://api-colombia.com/api/v1/Department';
+const API_COLOMBIA_CITIES_BASE_URL = 'https://api-colombia.com/api/v1/Department';
+
+export default function ProveedoresTable() {
+    // --- ESTADOS ---
+    const [allProveedores, setAllProveedores] = useState<Proveedor[]>([]);
+    const [loading, setLoading] = useState<boolean>(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const [isModalOpen, setIsModalOpen] = useState(false);
     const [modoEdicion, setModoEdicion] = useState(false);
     const [proveedorEditandoId, setProveedorEditandoId] = useState<number | null>(null);
-    const [mensajeAlerta, setMensajeAlerta] = useState("");
+    const [nuevoProveedor, setNuevoProveedor] = useState<Omit<Proveedor, 'id' | 'estado'>>({
+        tipo_proveedor: 'persona_natural',
+        nombre_comercial: "",
+        razon_social: null,
+        nombre_contacto: null,
+        tipo_documento: "CC",
+        documento: "",
+        correo: "",
+        telefono: "",
+        direccion: "",
+        departamento: "",
+        municipio: "",
+        barrio: null,
+    });
+
     const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
     const [proveedorAEliminar, setProveedorAEliminar] = useState<Proveedor | null>(null);
-  
+
     const [modalDetalleOpen, setModalDetalleOpen] = useState(false);
     const [detalleActual, setDetalleActual] = useState<Proveedor | null>(null);
-  
-    const toggleEstado = (id: number) => {
-      setProveedores((prev) =>
-        prev.map((proveedor) =>
-          proveedor.id === id ? { ...proveedor, activo: !proveedor.activo } : proveedor
-        )
-      );
+
+    const { token, logout } = useAuth();
+
+    const [searchTerm, setSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+
+    // Estados para manejar departamentos y municipios con la nueva API
+    const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
+    const [municipios, setMunicipios] = useState<Municipio[]>([]);
+    const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
+    const [loadingDepartamentos, setLoadingDepartamentos] = useState(false);
+    const [loadingMunicipios, setLoadingMunicipios] = useState(false);
+
+    // --- LÓGICA DE DATOS ---
+    const fetchProveedores = useCallback(async () => {
+        if (!token) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await fetch(API_BASE_URL, {
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    toast.error("Sesión expirada. Inicia sesión de nuevo.");
+                    logout();
+                }
+                throw new Error(`Error HTTP: ${response.status}`);
+            }
+            const data: Proveedor[] = await response.json();
+            setAllProveedores(data);
+        } catch (err: any) {
+            setError(`No se pudieron cargar los proveedores: ${err.message}`);
+            toast.error(`Error al cargar proveedores: ${err.message}`);
+        } finally {
+            setLoading(false);
+        }
+    }, [token, logout]);
+
+    const fetchDepartamentos = useCallback(async () => {
+        setLoadingDepartamentos(true);
+        try {
+            const response = await fetch(API_COLOMBIA_DEPARTMENTS_URL);
+            if (!response.ok) throw new Error('Error al cargar departamentos');
+            const data: Departamento[] = await response.json();
+            setDepartamentos(data.sort((a, b) => a.name.localeCompare(b.name)));
+        } catch (error: any) {
+            toast.error(`Error al cargar departamentos: ${error.message}`);
+        } finally {
+            setLoadingDepartamentos(false);
+        }
+    }, []);
+
+    const fetchMunicipios = useCallback(async (departmentId: number) => {
+        setLoadingMunicipios(true);
+        setMunicipios([]);
+        try {
+            const url = `${API_COLOMBIA_CITIES_BASE_URL}/${departmentId}/cities`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Error al cargar municipios`);
+            const data: Municipio[] = await response.json();
+            setMunicipios(data.sort((a, b) => a.name.localeCompare(b.name)));
+        } catch (error: any) {
+            toast.error(`Error al cargar municipios: ${error.message}`);
+        } finally {
+            setLoadingMunicipios(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (token) {
+            fetchProveedores();
+            fetchDepartamentos();
+        }
+    }, [token, fetchProveedores, fetchDepartamentos]);
+
+    useEffect(() => {
+        if (selectedDepartmentId) {
+            fetchMunicipios(selectedDepartmentId);
+        } else {
+            setMunicipios([]);
+        }
+    }, [selectedDepartmentId, fetchMunicipios]);
+
+    const { currentTableData, totalPages, totalItems } = useMemo(() => {
+        let filteredData = allProveedores;
+        if (searchTerm) {
+            const lowercasedFilter = searchTerm.toLowerCase();
+            filteredData = allProveedores.filter(p =>
+                p.nombre_comercial.toLowerCase().includes(lowercasedFilter) ||
+                (p.razon_social && p.razon_social.toLowerCase().includes(lowercasedFilter)) ||
+                p.documento.toLowerCase().includes(lowercasedFilter) ||
+                p.correo.toLowerCase().includes(lowercasedFilter)
+            );
+        }
+        const totalItems = filteredData.length;
+        const totalPages = Math.ceil(totalItems / itemsPerPage);
+        const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+        return { currentTableData: paginatedData, totalPages, totalItems };
+    }, [allProveedores, searchTerm, currentPage, itemsPerPage]);
+
+    // --- MANEJADORES DE EVENTOS Y ACCIONES CRUD ---
+    const handleAction = async (action: () => Promise<any>, successMessage: string, errorMessage: string) => {
+        if (!token) return toast.error("No autenticado.");
+        try {
+            await action();
+            toast.success(successMessage);
+            await fetchProveedores();
+        } catch (err: any) {
+            toast.error(`${errorMessage}: ${err.message}`);
+            if (err.status === 401 || err.status === 403) logout();
+        }
     };
-  
-    const abrirModal = () => {
-      setNuevoProveedor({
-        nombre: "",
-        correo: "",
-        direccion: "",
-        telefono: "",
-        celular: "",       // nuevo campo
-        ciudad: "",        // nuevo campo
-        departamento: "",  // nuevo campo
-        fechaNacimiento: "",
-        tipoDocumento: "",
-        documento: "", // nuevo campo
-        rh: "",            // nuevo campo
-        genero: "",
-        tipo: "",
-       });
-      setModoEdicion(false);
-      setProveedorEditandoId(null);
-      setIsModalOpen(true);
+
+    const guardarProveedor = () => {
+        const isEditing = modoEdicion && proveedorEditandoId !== null;
+        const apiCall = async () => {
+            const url = isEditing ? `${API_BASE_URL}/${proveedorEditandoId}` : API_BASE_URL;
+            const method = isEditing ? 'PUT' : 'POST';
+            const payload = isEditing ? nuevoProveedor : { ...nuevoProveedor, estado: 1 };
+            const response = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.error || `Error ${response.status}`);
+            }
+        };
+        handleAction(
+            apiCall,
+            `Proveedor ${isEditing ? 'actualizado' : 'creado'} correctamente.`,
+            `Error al ${isEditing ? 'actualizar' : 'crear'} proveedor`
+        ).finally(() => cerrarModal());
     };
-  
+
+    const confirmarEliminacion = () => {
+        if (!proveedorAEliminar) return;
+        const apiCall = async () => {
+            const response = await fetch(`${API_BASE_URL}/${proveedorAEliminar.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+             if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.error || `Error ${response.status}`);
+            }
+        };
+        handleAction(apiCall, "Proveedor eliminado.", "Error al eliminar.")
+            .finally(() => {
+                setConfirmDialogOpen(false);
+                setProveedorAEliminar(null);
+            });
+    };
+
+    const toggleEstado = (proveedor: Proveedor) => {
+        const apiCall = async () => {
+            const response = await fetch(`${API_BASE_URL}/${proveedor.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ estado: proveedor.estado === 1 ? 0 : 1 })
+            });
+             if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.error || `Error ${response.status}`);
+            }
+        };
+        handleAction(apiCall, "Estado actualizado.", "Error al cambiar estado.");
+    };
+
+    // --- MANEJADORES DE UI (MODALES, PAGINACIÓN, ETC.) ---
+    const abrirModalAgregar = () => {
+        setModoEdicion(false);
+        setProveedorEditandoId(null);
+        setNuevoProveedor({
+            tipo_proveedor: 'persona_natural',
+            nombre_comercial: "",
+            razon_social: null,
+            nombre_contacto: null,
+            tipo_documento: "CC",
+            documento: "",
+            correo: "",
+            telefono: "",
+            direccion: "",
+            departamento: "",
+            municipio: "",
+            barrio: null,
+        });
+        setSelectedDepartmentId(null);
+        setMunicipios([]);
+        setIsModalOpen(true);
+    };
+
     const abrirModalEditar = (proveedor: Proveedor) => {
-      setNuevoProveedor({
-        nombre: proveedor.nombre,
-        correo: proveedor.correo,
-        direccion: proveedor.direccion,
-        telefono: proveedor.telefono,
-        celular: proveedor.celular || "",         // nuevo campo
-        ciudad: proveedor.ciudad || "",          // nuevo campo
-        departamento: proveedor.departamento || "", // nuevo campo
-        fechaNacimiento: proveedor.fechaNacimiento || "", // nuevo campo
-        rh: proveedor.rh || "",                 // nuevo campo
-        genero: proveedor.genero || "",         // nuevo campo
-        tipoDocumento: proveedor.tipoDocumento || "",  // nuevo campo
-        documento: proveedor.documento || "",
-        tipo: proveedor.tipo || "",
-      });
-      setModoEdicion(true);
-      setProveedorEditandoId(proveedor.id);
-      setIsModalOpen(true);
+        setModoEdicion(true);
+        setProveedorEditandoId(proveedor.id);
+        setNuevoProveedor({
+            tipo_proveedor: proveedor.tipo_proveedor,
+            nombre_comercial: proveedor.nombre_comercial,
+            razon_social: proveedor.razon_social,
+            nombre_contacto: proveedor.nombre_contacto,
+            tipo_documento: proveedor.tipo_documento,
+            documento: proveedor.documento,
+            correo: proveedor.correo,
+            telefono: proveedor.telefono,
+            direccion: proveedor.direccion,
+            departamento: proveedor.departamento,
+            municipio: proveedor.municipio,
+            barrio: proveedor.barrio,
+        });
+        const deptoEncontrado = departamentos.find(d => d.name === proveedor.departamento);
+        if (deptoEncontrado) {
+            setSelectedDepartmentId(deptoEncontrado.id);
+        } else {
+            setSelectedDepartmentId(null);
+        }
+        setIsModalOpen(true);
     };
-  
-    const cerrarModal = () => {
-      setIsModalOpen(false);
-      setNuevoProveedor({
-        nombre: "",
-        correo: "",
-        direccion: "",
-        telefono: "",
-        celular: "",         // nuevo campo
-        ciudad: "",          // nuevo campo
-        departamento: "",    // nuevo campo
-        fechaNacimiento: "", // nuevo campo
-        rh: "",              // nuevo campo
-        genero: "",          // nuevo campo
-        tipoDocumento: "",   // nuevo campo
-        documento: "",  
-        tipo: "",
-      });
-      setModoEdicion(false);
-      setProveedorEditandoId(null);
-    };
-  
-    const handleChange = (
-      e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-    ) => {
-      const { name, value } = e.target;
-      setNuevoProveedor((prev) => ({ ...prev, [name]: value }));
-    };
-  
+    
+    const cerrarModal = () => setIsModalOpen(false);
+    
     const verDetalle = (proveedor: Proveedor) => {
       setDetalleActual(proveedor);
       setModalDetalleOpen(true);
     };
-  
-    const cerrarDetalle = () => {
-      setModalDetalleOpen(false);
-      setDetalleActual(null);
-    };
-  
-    const guardarProveedor = () => {
-      if (!nuevoProveedor.nombre.trim() || !nuevoProveedor.correo.trim()) return;
-  
-      if (modoEdicion && proveedorEditandoId !== null) {
-        setProveedores((prev) =>
-          prev.map((proveedor) =>
-            proveedor.id === proveedorEditandoId ? { ...proveedor, ...nuevoProveedor } : proveedor
-          )
-        );
-        setMensajeAlerta("Proveedor actualizado correctamente.");
-      } else {
-        const nuevo = {
-          id: proveedores.length + 1,
-          ...nuevoProveedor,
-          activo: true,
-        };
-        setProveedores((prev) => [...prev, nuevo]);
-        setMensajeAlerta("Proveedor creado correctamente.");
-      }
-  
-      setTimeout(() => setMensajeAlerta(""), 3000);
-      cerrarModal();
-    };
-  
+
+    const cerrarDetalle = () => setModalDetalleOpen(false);
+
     const solicitarConfirmacionEliminacion = (proveedor: Proveedor) => {
-      setProveedorAEliminar(proveedor);
-      setConfirmDialogOpen(true);
+        setProveedorAEliminar(proveedor);
+        setConfirmDialogOpen(true);
     };
 
-    const confirmarEliminacion = () => {
-      if (proveedorAEliminar) {
-        setProveedores((prev) =>
-          prev.filter((proveedor) => proveedor.id !== proveedorAEliminar.id)
-        );
-        setMensajeAlerta("Proveedor eliminado correctamente.");
-        setTimeout(() => setMensajeAlerta(""), 3000);
-      }
-      setConfirmDialogOpen(false);
-      setProveedorAEliminar(null);
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setNuevoProveedor(prev => {
+            const updated = { ...prev, [name]: value };
+            if (name === 'tipo_proveedor') {
+                updated.razon_social = null;
+                updated.nombre_contacto = null;
+                updated.tipo_documento = value === 'empresa' ? 'NIT' : 'CC';
+            }
+            return updated;
+        });
     };
 
-  return (
-    <div className="overflow-hidden rounded-xl border border-gray-400 bg-gray-200 dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="p-4 flex items-center justify-between flex-wrap gap-4">
-  <Button
-    variant="contained"
-    color="primary"
-    startIcon={<AddIcon />}
-    onClick={() => abrirModal()}
-    sx={{ textTransform: 'none' }}
-  >
-    Agregar Proveedor
-  </Button>
+    const handleSelectChange = (e: SelectChangeEvent<any>) => {
+        const { name, value } = e.target;
+        if (name === 'departamento') {
+            const selectedDepto = departamentos.find(d => d.name === value);
+            setSelectedDepartmentId(selectedDepto ? selectedDepto.id : null);
+            setNuevoProveedor(prev => ({ ...prev, departamento: value, municipio: "" }));
+        } else {
+            setNuevoProveedor(prev => ({ ...prev, [name]: value }));
+        }
+    };
+    
+    const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
+    const handleChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setSearchTerm(e.target.value);
+        setCurrentPage(1);
+    };
+    const handleItemsPerPageChange = (event: SelectChangeEvent<number>) => {
+        setItemsPerPage(Number(event.target.value));
+        setCurrentPage(1);
+    };
+    
+    if (loading && allProveedores.length === 0) return <div className="p-4 text-center">Cargando proveedores...</div>;
+    if (error) return <div className="p-4 text-center text-red-500">Error: {error}</div>;
 
-  <input
-    type="text"
-    placeholder="Buscar"
-    className="border border-gray-400 bg-white rounded px-4 py-2 w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-gray-800 dark:text-white dark:border-gray-600" // Suponiendo que tenés un filtro
-  />
-</div>
+    // --- RENDERIZADO DEL COMPONENTE ---
+    return (
+        <div className="overflow-hidden rounded-xl border border-gray-400 bg-gray-200 dark:border-white/[0.05] dark:bg-white/[0.03]">
+            {/* --- BARRA SUPERIOR CON BOTÓN, BÚSQUEDA Y PAGINACIÓN --- */}
+            <div className="p-4 flex flex-col sm:flex-row items-center justify-between flex-wrap gap-4">
+                <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={abrirModalAgregar}>
+                    Agregar Proveedor
+                </Button>
+                <div className="flex items-center gap-4 w-full sm:w-auto">
+                    <input
+                        type="text"
+                        placeholder="Buscar por nombre, documento..."
+                        value={searchTerm}
+                        onChange={handleChangeSearch}
+                        className="border border-gray-400 bg-white rounded px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                    <FormControl sx={{ minWidth: 120 }} size="small">
+                        <InputLabel>Items/pág</InputLabel>
+                        <Select value={itemsPerPage} label="Items/pág" onChange={handleItemsPerPageChange}>
+                            <MenuItem value={5}>5</MenuItem>
+                            <MenuItem value={10}>10</MenuItem>
+                            <MenuItem value={20}>20</MenuItem>
+                            <MenuItem value={50}>50</MenuItem>
+                        </Select>
+                    </FormControl>
+                </div>
+            </div>
 
-      {mensajeAlerta && (
-        <div className="mx-4 mb-4 text-sm text-green-700 bg-green-100 border border-green-300 rounded p-2 dark:bg-green-900/20 dark:text-green-400 dark:border-green-600">
-          {mensajeAlerta}
+            {/* --- TABLA DE PROVEEDORES --- */}
+            <div className="max-w-full overflow-x-auto">
+                <table className="min-w-full">
+                    <thead className="border-b border-gray-400 dark:border-white/[0.05]">
+                        <tr>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Nombre / Razón Social</th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Documento</th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Contacto</th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Estado</th>
+                            <th className="px-5 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-400 dark:divide-white/[0.05]">
+                        {currentTableData.length === 0 ? (
+                            <tr><td colSpan={5} className="text-center py-4">No se encontraron resultados.</td></tr>
+                        ) : (
+                            currentTableData.map((proveedor) => (
+                                <tr key={proveedor.id}>
+                                    <td className="px-5 py-4 whitespace-nowrap">{proveedor.tipo_proveedor === 'empresa' ? proveedor.razon_social : proveedor.nombre_comercial}</td>
+                                    <td className="px-5 py-4 whitespace-nowrap">{proveedor.tipo_documento}: {proveedor.documento}</td>
+                                    <td className="px-5 py-4 whitespace-nowrap">{proveedor.correo}</td>
+                                    <td className="px-5 py-4 whitespace-nowrap">
+                                        <span onClick={() => toggleEstado(proveedor)} className={`cursor-pointer px-2 py-1 rounded-full text-xs font-semibold ${proveedor.estado === 1 ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                                            {proveedor.estado === 1 ? "Activo" : "Inactivo"}
+                                        </span>
+                                    </td>
+                                    <td className="px-5 py-4 whitespace-nowrap space-x-1">
+                                        <Tooltip title="Ver Detalle"><IconButton color="secondary" onClick={() => verDetalle(proveedor)}><VisibilityIcon /></IconButton></Tooltip>
+                                        <Tooltip title="Editar"><IconButton color="primary" onClick={() => abrirModalEditar(proveedor)}><EditIcon /></IconButton></Tooltip>
+                                        <Tooltip title="Eliminar"><IconButton color="error" onClick={() => solicitarConfirmacionEliminacion(proveedor)}><DeleteIcon /></IconButton></Tooltip>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* --- BARRA INFERIOR CON INFO Y PAGINACIÓN --- */}
+            <div className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <p className="text-sm text-gray-700">Mostrando {currentTableData.length} de {totalItems} proveedores</p>
+                {totalPages > 1 && <Pagination count={totalPages} page={currentPage} onChange={handlePageChange} color="primary" />}
+            </div>
+
+            {/* --- MODAL DE AGREGAR/EDITAR PROVEEDOR --- */}
+            <Dialog open={isModalOpen} onClose={cerrarModal} maxWidth="md" fullWidth>
+                <DialogTitle>{modoEdicion ? "Editar Proveedor" : "Agregar Nuevo Proveedor"}</DialogTitle>
+                <DialogContent dividers>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2">
+                        <FormControl fullWidth>
+                            <InputLabel>Tipo de Proveedor</InputLabel>
+                            <Select name="tipo_proveedor" value={nuevoProveedor.tipo_proveedor} label="Tipo de Proveedor" onChange={handleSelectChange}>
+                                <MenuItem value="persona_natural">Persona Natural</MenuItem>
+                                <MenuItem value="empresa">Empresa</MenuItem>
+                            </Select>
+                        </FormControl>
+                        <TextField name="nombre_comercial" label={nuevoProveedor.tipo_proveedor === 'persona_natural' ? "Nombre Completo" : "Nombre Comercial"} value={nuevoProveedor.nombre_comercial || ''} onChange={handleChange} fullWidth />
+                        {nuevoProveedor.tipo_proveedor === 'empresa' && <>
+                            <TextField name="razon_social" label="Razón Social" value={nuevoProveedor.razon_social || ''} onChange={handleChange} fullWidth />
+                            <TextField name="nombre_contacto" label="Nombre de Contacto" value={nuevoProveedor.nombre_contacto || ''} onChange={handleChange} fullWidth />
+                        </>}
+                        <FormControl fullWidth>
+                            <InputLabel>Tipo Documento</InputLabel>
+                            <Select name="tipo_documento" value={nuevoProveedor.tipo_documento} label="Tipo Documento" onChange={handleSelectChange}>
+                                {nuevoProveedor.tipo_proveedor === 'empresa' ? 
+                                  <MenuItem value="NIT">NIT</MenuItem> : 
+                                  [<MenuItem key="CC" value="CC">CC</MenuItem>, <MenuItem key="CE" value="CE">CE</MenuItem>]}
+                            </Select>
+                        </FormControl>
+                        <TextField name="documento" label="Documento" value={nuevoProveedor.documento} onChange={handleChange} fullWidth />
+                        <TextField name="correo" label="Correo Electrónico" type="email" value={nuevoProveedor.correo} onChange={handleChange} fullWidth />
+                        <TextField name="telefono" label="Teléfono" value={nuevoProveedor.telefono} onChange={handleChange} fullWidth />
+                        <TextField name="direccion" label="Dirección" value={nuevoProveedor.direccion} onChange={handleChange} fullWidth />
+                        
+                        <FormControl fullWidth disabled={loadingDepartamentos}>
+                            <InputLabel>Departamento</InputLabel>
+                            <Select name="departamento" value={nuevoProveedor.departamento} label="Departamento" onChange={handleSelectChange}>
+                                <MenuItem value="">{loadingDepartamentos ? "Cargando..." : "Seleccionar"}</MenuItem>
+                                {departamentos.map(d => <MenuItem key={d.id} value={d.name}>{d.name}</MenuItem>)}
+                            </Select>
+                        </FormControl>
+                        <FormControl fullWidth disabled={!selectedDepartmentId || loadingMunicipios}>
+                            <InputLabel>Municipio</InputLabel>
+                            <Select name="municipio" value={nuevoProveedor.municipio} label="Municipio" onChange={handleSelectChange}>
+                                <MenuItem value="">{loadingMunicipios ? "Cargando..." : "Seleccionar"}</MenuItem>
+                                {municipios.map(m => <MenuItem key={m.id} value={m.name}>{m.name}</MenuItem>)}
+                            </Select>
+                        </FormControl>
+                        
+                        <TextField name="barrio" label="Barrio (Opcional)" value={nuevoProveedor.barrio || ''} onChange={handleChange} fullWidth />
+                    </div>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={cerrarModal}>Cancelar</Button>
+                    <Button onClick={guardarProveedor} variant="contained">{modoEdicion ? "Actualizar" : "Guardar"}</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* --- MODAL DE VER DETALLE --- */}
+            <Modal isOpen={modalDetalleOpen} handleClose={cerrarDetalle}>
+                <h2 className="text-2xl font-bold mb-6">Detalle del Proveedor</h2>
+                {detalleActual &&
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                        <div><strong>Tipo:</strong> {detalleActual.tipo_proveedor === 'empresa' ? 'Empresa' : 'Persona Natural'}</div>
+                        <div><strong>Nombre:</strong> {detalleActual.nombre_comercial}</div>
+                        {detalleActual.tipo_proveedor === 'empresa' && <>
+                            <div className="col-span-2 md:col-span-1"><strong>Razón Social:</strong> {detalleActual.razon_social}</div>
+                            <div><strong>Contacto:</strong> {detalleActual.nombre_contacto || 'N/A'}</div>
+                        </>}
+                        <div><strong>Documento:</strong> {detalleActual.tipo_documento} {detalleActual.documento}</div>
+                        <div className="col-span-2 md:col-span-1"><strong>Correo:</strong> {detalleActual.correo}</div>
+                        <div><strong>Teléfono:</strong> {detalleActual.telefono}</div>
+                        <div className="col-span-full"><strong>Dirección:</strong> {`${detalleActual.direccion}, ${detalleActual.barrio || ''}, ${detalleActual.municipio}, ${detalleActual.departamento}`}</div>
+                         <div><strong>Estado:</strong> {detalleActual.estado === 1 ? "Activo" : "Inactivo"}</div>
+                    </div>
+                }
+                 <div className="mt-8 flex justify-end">
+                    <Button onClick={cerrarDetalle} variant="contained">Cerrar</Button>
+                </div>
+            </Modal>
+            
+            {/* --- DIÁLOGO DE CONFIRMACIÓN DE ELIMINACIÓN --- */}
+            <Dialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)}>
+                <DialogTitle>Confirmar Eliminación</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        ¿Estás seguro de eliminar al proveedor <strong>{proveedorAEliminar?.nombre_comercial || proveedorAEliminar?.razon_social}</strong>? Esta acción no se puede deshacer.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setConfirmDialogOpen(false)}>Cancelar</Button>
+                    <Button onClick={confirmarEliminacion} color="error">Eliminar</Button>
+                </DialogActions>
+            </Dialog>
         </div>
-      )}
-
-      <div className="max-w-full overflow-x-auto">
-        <Table>
-          <TableHeader className="border-b border-gray-400 dark:border-white/[0.05]">
-            <TableRow>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">Nombre</TableCell>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">Correo</TableCell>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">Dirección</TableCell>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">Telefono</TableCell>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">Estado</TableCell>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">Acciones</TableCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody className="divide-y divide-gray-400 dark:divide-white/[0.05]">
-            {proveedores.map(proveedor => (
-              <TableRow key={proveedor.id}>
-                <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">{proveedor.nombre}</TableCell>
-                <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">{proveedor.correo}</TableCell>
-                <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">{proveedor.direccion}</TableCell>
-                <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">{proveedor.telefono}</TableCell>
-                <TableCell className="px-5 py-4">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleEstado(proveedor.id)}
-                      className={`w-10 h-5 rounded-full transition-all duration-300 ${
-                        proveedor.activo
-                          ? "bg-green-500"
-                          : "bg-gray-400 dark:bg-gray-600"
-                      } relative`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${
-                          proveedor.activo
-                            ? "translate-x-5 left-0"
-                            : "translate-x-0 left-0.5"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </TableCell>
-                <TableCell className="px-5 py-4 space-x-2">
-                <Tooltip title="Ver Detalle">
-                        <IconButton
-                        color="secondary"
-                        onClick={() => verDetalle(proveedor)}>
-                          <VisibilityIcon/>
-                        </IconButton>
-                   </Tooltip> 
-                   <Tooltip title="Editar">
-                        <IconButton
-                        color="primary" onClick={() => abrirModalEditar(proveedor)}>
-                          <EditIcon />
-
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Eliminar">
-                        <IconButton
-                        color="error" onClick={() => solicitarConfirmacionEliminacion(proveedor)}>
-                          <DeleteIcon />
-
-                        </IconButton>
-                      </Tooltip>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Modal Agregar / Editar */}
-      <Modal isOpen={isModalOpen} onClose={cerrarModal}>
-  <h2 className="text-lg font-bold mb-4">
-    {modoEdicion ? "Editar usuario" : "Agregar nuevo usuario"}
-  </h2>
-
-  {mensajeAlerta && (
-    <div className="mb-4 text-sm text-green-700 bg-green-100 border border-green-300 rounded p-2 dark:bg-green-900/20 dark:text-green-400 dark:border-green-600">
-      {mensajeAlerta}
-    </div>
-  )}
-
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Nombre *</label>
-      <input name="nombre" type="text" value={nuevoProveedor.nombre} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white" />
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Correo *</label>
-      <input name="correo" type="email" value={nuevoProveedor.correo} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white" />
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Tipo de documento *</label>
-      <select name="tipoDocumento" value={nuevoProveedor.tipoDocumento} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white">
-        <option value="">Seleccione</option>
-        <option value="CC">Cédula de Ciudadanía</option>
-        <option value="CE">Cédula de Extranjería</option>
-        <option value="TI">Tarjeta de Identidad</option>
-        <option value="PA">Pasaporte</option>
-        <option value="PA">NIT</option>
-      </select>
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Documento *</label>
-      <input name="documento" type="text" value={nuevoProveedor.documento} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white" />
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Dirección *</label>
-      <input name="direccion" type="text" value={nuevoProveedor.direccion} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white" />
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Teléfono *</label>
-      <input name="telefono" type="text" value={nuevoProveedor.telefono} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white" />
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Celular</label>
-      <input name="celular" type="text" value={nuevoProveedor.celular} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white" />
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Ciudad</label>
-      <input name="ciudad" type="text" value={nuevoProveedor.ciudad} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white" />
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Departamento</label>
-      <input name="departamento" type="text" value={nuevoProveedor.departamento} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white" />
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Fecha de nacimiento</label>
-      <input name="fechaNacimiento" type="date" value={nuevoProveedor.fechaNacimiento} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 h-[42px] leading-[1.25rem] bg-gray-200 rounded text-sm appearance-none dark:bg-gray-800 dark:text-white" />
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">RH</label>
-      <input name="rh" type="text" value={nuevoProveedor.rh} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white" />
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Género</label>
-      <select name="genero" value={nuevoProveedor.genero} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white">
-        <option value="">Seleccione</option>
-        <option value="masculino">Masculino</option>
-        <option value="femenino">Femenino</option>
-        <option value="otro">Otro</option>
-      </select>
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1 h-[2.5rem]">Tipo de persona</label>
-      <select name="tipo" value={nuevoProveedor.tipo} onChange={handleChange}
-        className="w-full border border-gray-400 px-3 py-2 bg-gray-200 rounded dark:bg-gray-800 dark:text-white">
-        <option value="">Seleccione</option>
-        <option value="natural">Natural</option>
-        <option value="juridica">Juridica</option>
-      </select>
-    </div>
-  </div>
-
-  <div className="flex justify-end gap-2 mt-6">
-    <button onClick={cerrarModal}
-      className="px-4 py-2 bg-gray-500 text-white rounded dark:bg-gray-500 dark:text-white">
-      Cancelar
-    </button>
-    <button onClick={guardarProveedor}
-      className="px-4 py-2 bg-brand-500 text-white rounded hover:bg-brand-600">
-      {modoEdicion ? "Actualizar" : "Guardar"}
-    </button>
-  </div>
-</Modal>
-
-      {/* Modal Ver Detalle */}
-      <Modal isOpen={modalDetalleOpen} onClose={cerrarDetalle}>
-  <h2 className="text-2xl font-bold mb-6 text-black dark:text-white">
-    Detalle del Proveedor
-  </h2>
-
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    {[
-      ["Nombre", detalleActual?.nombre],
-      ["Correo", detalleActual?.correo],
-      ["Tipo de Documento", detalleActual?.tipoDocumento],
-      ["Documento", detalleActual?.documento],
-      ["Dirección", detalleActual?.direccion],
-      ["Celular", detalleActual?.celular],
-      ["Ciudad", detalleActual?.ciudad],
-      ["Departamento", detalleActual?.departamento],
-      ["Fecha de Nacimiento", detalleActual?.fechaNacimiento],
-      ["RH", detalleActual?.rh],
-      ["Género", detalleActual?.genero],
-      ["Tipo de persona", detalleActual?.tipo],
-    ].map(([label, value], idx) => (
-      <div
-        key={idx}
-        className="p-4 border border-gray-300 bg-gray-50 rounded-lg shadow-sm text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
-      >
-        <p className="text-sm font-medium mb-1">{label}</p>
-        <p className="font-semibold">{value || "—"}</p>
-      </div>
-    ))}
-  </div>
-
-  <div className="mt-8 flex justify-end">
-    <button
-      onClick={cerrarDetalle}
-      className="px-5 py-2 bg-brand-500 text-white rounded hover:bg-brand-600 transition-all dark:bg-brand-600 dark:hover:bg-brand-500"
-    >
-      Cerrar
-    </button>
-  </div>
-</Modal>
-<Dialog
-  open={confirmDialogOpen}
-  onClose={() => setConfirmDialogOpen(false)}
-  maxWidth="sm"
-  fullWidth
->
-  <DialogTitle className="bg-red-500 text-white font-bold text-xl">
-    <div className="flex items-center">
-      <DeleteIcon className="mr-2" />
-      Confirmar eliminación
-    </div>
-  </DialogTitle>
-  <DialogContent className="bg-gray-100">
-    <DialogContentText className="text-lg text-gray-700">
-      ¿Estás seguro de que deseas eliminar al proveedor{' '}
-      <strong className="font-semibold text-red-600">{proveedorAEliminar?.nombre}</strong>? Esta acción no se puede deshacer.
-    </DialogContentText>
-  </DialogContent>
-  <DialogActions className="bg-gray-50 p-4">
-    <Tooltip title="Cancelar">
-      <IconButton
-        onClick={() => setConfirmDialogOpen(false)}
-        color="default"
-        className="hover:bg-gray-200 rounded-full"
-      >
-        <CancellIcon />
-      </IconButton>
-    </Tooltip>
-    <Tooltip title="Eliminar">
-      <Button
-        onClick={confirmarEliminacion}
-        color="error"
-        variant="contained"
-        startIcon={<DeleteIcon />}
-        className="capitalize font-medium hover:bg-red-600"
-      >
-        Eliminar
-      </Button>
-    </Tooltip>
-  </DialogActions>
-</Dialog>
-    </div>
-  );
+    );
 }

@@ -72,7 +72,6 @@ export default function PermisosTable() {
       setPermisosAsignados(dataPermisosAsignados);
 
     } catch (err: unknown) {
-      console.error("Error al cargar datos de permisos:", err);
       if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -156,7 +155,6 @@ export default function PermisosTable() {
       }
       await fetchPermisosData();
     } catch (err: unknown) {
-      console.error("Error al guardar permiso:", err);
       if (err instanceof Error) {
         setMensajeAlerta(err.message);
       } else {
@@ -194,7 +192,6 @@ export default function PermisosTable() {
         navigate("/roles");
       }, 1500);
     } catch (err: unknown) {
-      console.error("Error al guardar asignación de permisos:", err);
       if (err instanceof Error) {
         setMensajeAlerta(err.message);
       } else {

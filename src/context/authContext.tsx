@@ -33,8 +33,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (storedUser) {
       try {
         return JSON.parse(storedUser);
-      } catch (e) {
-        console.error("Error parsing user info from localStorage:", e);
+      } catch {
+
         localStorage.removeItem('user'); // Limpiar si hay error
         return null;
       }
