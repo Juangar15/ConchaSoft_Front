@@ -23,9 +23,9 @@ import {
   Switch,
   FormControlLabel,
   Paper, // Para un contenedor más estético
-  Grid, // Para organizar el formulario del modal
   Box, // Para un layout flexible
 } from "@mui/material";
+import Grid from "@mui/material/Grid2";
 import { SelectChangeEvent } from '@mui/material/Select';
 import {
   Add as AddIcon,
@@ -310,7 +310,7 @@ export default function UserManagement() {
           </TableHeader>
           <TableBody>
             {currentTableData.map((usuario) => (
-              <TableRow key={usuario.login} sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}>
+              <TableRow key={usuario.login} className="odd:bg-gray-50 dark:odd:bg-gray-800">
                 <TableCell>{usuario.login}</TableCell>
                 <TableCell>{usuario.correo}</TableCell>
                 <TableCell>{usuario.nombre_rol}</TableCell>
@@ -347,13 +347,13 @@ export default function UserManagement() {
         <DialogTitle>{modoEdicion ? `Editar Usuario: ${usuarioEditandoLogin}` : 'Crear Nuevo Usuario'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={3} sx={{ pt: 1 }}>
-            <Grid item xs={12} sm={6}>
+            <Grid xs={12} sm={6}>
               <TextField label="Login" name="login" value={nuevoUsuario.login} onChange={handleInputChange} fullWidth required disabled={modoEdicion}/>
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid xs={12} sm={6}>
               <TextField label="Correo Electrónico" name="correo" type="email" value={nuevoUsuario.correo} onChange={handleInputChange} fullWidth required/>
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid xs={12} sm={6}>
               <FormControl fullWidth required>
                 <InputLabel>Rol</InputLabel>
                 <Select name="id_rol" value={nuevoUsuario.id_rol} label="Rol" onChange={handleInputChange}>
@@ -361,10 +361,10 @@ export default function UserManagement() {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid xs={12} sm={6}>
               <TextField label={modoEdicion ? "Nueva Contraseña (opcional)" : "Contraseña"} name="contraseña" type="password" value={nuevoUsuario.contraseña} onChange={handleInputChange} fullWidth required={!modoEdicion}/>
             </Grid>
-            <Grid item xs={12}>
+            <Grid xs={12}>
               <FormControlLabel control={<Switch name="activo" checked={nuevoUsuario.activo} onChange={handleInputChange}/>} label="Usuario Activo"/>
             </Grid>
           </Grid>
