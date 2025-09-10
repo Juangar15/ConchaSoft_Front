@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+
 import { toast } from 'react-toastify';
 
 // --- Importaciones de Material-UI (MUI) ---
@@ -123,8 +123,6 @@ export default function ComprasTable() {
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modoEdicion, setModoEdicion] = useState(false);
-  const [compraEditandoId, setCompraEditandoId] = useState<number | null>(null);
 
   const [nuevaCompra, setNuevaCompra] = useState<{
     fecha: string;
@@ -140,7 +138,6 @@ export default function ComprasTable() {
 
   const [productosDisponibles, setProductosDisponibles] = useState<ProductoSeleccionable[]>([]);
   const [proveedoresDisponibles, setProveedoresDisponibles] = useState<ProveedorSeleccionable[]>([]);
-  const [loadingSelects, setLoadingSelects] = useState(false);
 
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [compraAAnular, setCompraAAnular] = useState<Compra | null>(null);
@@ -205,7 +202,7 @@ export default function ComprasTable() {
     };
   }, [allCompras, searchTerm, currentPage, itemsPerPage]);
 
-  const handlePageChange = (e: React.ChangeEvent<unknown>, v: number) => setCurrentPage(v);
+  const handlePageChange = (_: React.ChangeEvent<unknown>, v: number) => setCurrentPage(v);
   const handleChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => { setSearchTerm(e.target.value); setCurrentPage(1); };
   const handleItemsPerPageChange = (e: SelectChangeEvent<number>) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); };
 

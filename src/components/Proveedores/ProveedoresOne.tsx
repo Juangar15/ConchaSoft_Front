@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
 import EditIcon from '@mui/icons-material/Edit';
-import CancelIcon from '@mui/icons-material/Cancel';
+
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import AddIcon from '@mui/icons-material/Add';
@@ -378,7 +378,7 @@ export default function ProveedoresTable() {
         }
     };
 
-    const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
+    const handlePageChange = (_: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
     const handleChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSearchTerm(e.target.value);
         setCurrentPage(1);

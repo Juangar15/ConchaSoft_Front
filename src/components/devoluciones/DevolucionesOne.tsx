@@ -420,7 +420,7 @@ export default function DevolucionesTable() {
     setNuevaDevolucion(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleProductoChange = (index: number, e: React.ChangeEvent<HTMLInputElement> | SelectChangeEvent<any>) => {
+  const handleProductoChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>) => {
     const { name, value } = e.target;
     const productos = [...nuevaDevolucion.productos];
 

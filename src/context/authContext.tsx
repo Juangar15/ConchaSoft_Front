@@ -152,7 +152,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               // Forzar un re-render adicional para asegurar que todos los componentes se actualicen
               setTimeout(() => {
                 console.log('Forzando re-render adicional...');
-                setUser(prev => ({ ...prev }));
+                setUser(prev => prev ? { ...prev } : null);
               }, 100);
             } else {
               console.error('Error al obtener permisos del rol:', permissionsResponse.statusText);

@@ -430,7 +430,7 @@ export default function VentasTable() {
     }
   };
 
-  const handleProductoChange = (index: number, e: React.ChangeEvent<HTMLInputElement> | SelectChangeEvent<any>) => {
+  const handleProductoChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>) => {
     const { name, value } = e.target;
     const productos = [...nuevaVenta.productos];
 
