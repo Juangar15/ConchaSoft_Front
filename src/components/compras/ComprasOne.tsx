@@ -2,6 +2,41 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from 'react-toastify';
 
+// --- Importaciones de Material-UI (MUI) ---
+import {
+  Button,
+  TextField,
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Pagination,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Autocomplete, // Importar Autocomplete
+  Box,
+} from "@mui/material";
+import { SelectChangeEvent } from '@mui/material/Select';
+import {
+  PictureAsPdf as PictureAsPdfIcon,
+  Cancel as CancelIcon,
+  Visibility as VisibilityIcon,
+  Add as AddIcon,
+  Delete as DeleteIcon,
+} from '@mui/icons-material';
+
+// --- Importaciones de Terceros ---
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+
+// --- Importaciones de Contexto y UI Personalizada ---
+import { useAuth } from '../../context/authContext';
+import Modal from "../ui/modal/Modal";
 import {
   Table,
   TableBody,
@@ -9,42 +44,12 @@ import {
   TableHeader,
   TableRow,
 } from "../ui/table";
-import Button from "@mui/material/Button";
-import TextField from '@mui/material/TextField';
-import EditIcon from '@mui/icons-material/Edit';
-import IconButton from "@mui/material/IconButton";
-import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
-import CancelIcon from '@mui/icons-material/Cancel';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
-import Tooltip from '@mui/material/Tooltip';
-import Modal from "../ui/modal/Modal";
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogTitle from '@mui/material/DialogTitle';
-import Pagination from '@mui/material/Pagination';
 
-import FormControl from '@mui/material/FormControl';
-import InputLabel from '@mui/material/InputLabel';
-import Select, { SelectChangeEvent } from '@mui/material/Select';
-import MenuItem from '@mui/material/MenuItem';
-
-
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-
-import { useAuth } from '../../context/authContext';
 
 // --- CONFIGURACIÓN DE LA URL BASE DE TU API ---
 const API_BASE_URL = 'https://conchasoft-api.onrender.com/api';
 
-/**
- * @interface Compra
- * @description Define la estructura de una Compra para la lista principal.
- */
+// --- INTERFACES ---
 interface Compra {
   id: number;
   fecha: string;
@@ -55,12 +60,8 @@ interface Compra {
   nombre_proveedor: string;
 }
 
-/**
- * @interface CompraProductoDetalle
- * @description Estructura de un producto dentro del detalle de una compra.
- */
 interface CompraProductoDetalle {
-  id: number; // Mapeado desde id_compra_prod_item para la key de React
+  id: number;
   id_producto: number;
   id_talla: number;
   id_producto_talla: number;
@@ -68,14 +69,10 @@ interface CompraProductoDetalle {
   nombre_talla: string;
   color: string;
   cantidad: number;
-  precio_unitario: number; // Parseado a number
-  subtotal: number; // Parseado a number
+  precio_unitario: number;
+  subtotal: number;
 }
 
-/**
- * @interface ProductoAPI
- * @description Estructura de un producto como lo devuelve /api/productos.
- */
 interface ProductoAPI {
   id: number;
   nombre: string;
@@ -91,10 +88,6 @@ interface ProductoAPI {
   }[];
 }
 
-/**
- * @interface ProductoSeleccionable
- * @description Estructura aplanada de una variante de producto para los selectores.
- */
 interface ProductoSeleccionable {
   id_producto_talla: number;
   id_producto: number;
@@ -106,11 +99,6 @@ interface ProductoSeleccionable {
   precio_unitario: number;
 }
 
-
-/**
- * @interface ProveedorSeleccionable
- * @description Estructura de un proveedor para los selectores.
- */
 interface ProveedorSeleccionable {
   id: number;
   nombre_comercial: string;
@@ -119,806 +107,577 @@ interface ProveedorSeleccionable {
 
 export default function ComprasTable() {
   // --- ESTADOS LOCALES ---
-  const [allCompras, setAllCompras] = useState<Compra[]>([]); // Almacena TODAS las compras
+  const [allCompras, setAllCompras] = useState<Compra[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const navigate = useNavigate();
   const { token, isAuthenticated, logout } = useAuth();
 
-  // --- Estados para paginación y búsqueda (CLIENT-SIDE) ---
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // --- Estados para el modal de Ver Detalle ---
   const [modalDetalleOpen, setModalDetalleOpen] = useState(false);
   const [detalleActual, setDetalleActual] = useState<Compra | null>(null);
   const [productosDetalle, setProductosDetalle] = useState<CompraProductoDetalle[]>([]);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
-  const [errorDetalle, setErrorDetalle] = useState<string | null>(null);
-
-  // --- Estados para el modal de Agregar/Editar Compra ---
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [compraEditandoId, setCompraEditandoId] = useState<number | null>(null);
 
-  // Estado para el formulario de nueva/edición compra
-  const [nuevaCompra, setNuevaCompra] = useState({
+  const [nuevaCompra, setNuevaCompra] = useState<{
+    fecha: string;
+    tipo_pago: string;
+    id_proveedor: number | null;
+    productos: (Partial<ProductoSeleccionable> & { cantidad?: number })[];
+  }>({
     fecha: new Date().toISOString().split("T")[0],
     tipo_pago: "Efectivo",
-    id_proveedor: null as number | null,
-    productos: [] as {
-      id_producto_talla: number;
-      id_producto: number;
-      id_talla: number;
-      color: string;
-      cantidad: number;
-      precio_unitario: number;
-      nombre_producto: string;
-      nombre_talla: string;
-      stock_disponible?: number;
-    }[],
+    id_proveedor: null,
+    productos: [],
   });
 
-  // --- Estados para datos de selección (dropdowns en el modal) ---
   const [productosDisponibles, setProductosDisponibles] = useState<ProductoSeleccionable[]>([]);
   const [proveedoresDisponibles, setProveedoresDisponibles] = useState<ProveedorSeleccionable[]>([]);
   const [loadingSelects, setLoadingSelects] = useState(false);
-  const [errorSelects, setErrorSelects] = useState<string | null>(null);
 
-  // --- Estados para confirmación de anulación ---
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [compraAAnular, setCompraAAnular] = useState<Compra | null>(null);
 
-  /**
-   * @function fetchCompras
-   * @description Obtiene TODAS las compras de la API para manejarlas en el cliente.
-   */
+  // --- LÓGICA DE DATOS ---
   const fetchCompras = async () => {
-    if (!isAuthenticated || !token) {
-      setLoading(false);
-      setError("No autenticado. Por favor, inicia sesión.");
-      return;
-    }
-
+    if (!isAuthenticated || !token) return;
     setLoading(true);
-    setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/compras`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (response.status === 401 || response.status === 403) {
-        toast.error("Sesión expirada o no autorizado.");
-        logout();
-        return;
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Error HTTP: ${response.status}`);
-      }
-
+      const response = await fetch(`${API_BASE_URL}/compras`, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (response.status === 401 || response.status === 403) { toast.error("Sesión expirada."); logout(); return; }
+      if (!response.ok) throw new Error(`Error HTTP: ${response.status}`);
       const data = await response.json();
-
-      if (Array.isArray(data)) {
-        const processedCompras = data.map(compra => ({
-          ...compra,
-          total: parseFloat(compra.total) || 0
-        }));
-        setAllCompras(processedCompras);
-      } else {
-        throw new Error("Formato de datos de compras inválido de la API.");
-      }
-
+      setAllCompras(data.map((c: any) => ({ ...c, total: parseFloat(c.total) || 0 })));
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Error desconocido";
-      setError(`No se pudieron cargar las compras: ${errorMessage}`);
-      toast.error(`Error al cargar compras: ${errorMessage}`);
-      setAllCompras([]);
+      setError(`No se pudieron cargar las compras: ${err instanceof Error ? err.message : "Error desconocido"}`);
     } finally {
       setLoading(false);
     }
   };
 
-  /**
-   * @function fetchSelectOptions
-   * @description Obtiene productos y proveedores para los selectores del modal.
-   */
   const fetchSelectOptions = async () => {
     if (!isAuthenticated || !token) return;
     setLoadingSelects(true);
-    setErrorSelects(null);
     try {
-      // Fetch de Productos
-      const productsResponse = await fetch(`${API_BASE_URL}/productos/activos`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const [productsResponse, suppliersResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/productos/activos`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/proveedores/activos`, { headers: { 'Authorization': `Bearer ${token}` } })
+      ]);
       if (!productsResponse.ok) throw new Error('Error al cargar productos.');
-      const productsData: ProductoAPI[] = await productsResponse.json();
-
-      const flattenedProducts: ProductoSeleccionable[] = productsData.flatMap(product =>
-        product.variantes.map(variant => ({
-          id_producto_talla: variant.id_producto_talla,
-          id_producto: product.id,
-          nombre_producto: product.nombre,
-          id_talla: variant.id_talla,
-          nombre_talla: variant.nombre_talla,
-          color: variant.color,
-          stock_disponible: variant.stock,
-          precio_unitario: parseFloat(product.valor) || 0
-        }))
-      );
-      setProductosDisponibles(flattenedProducts);
-
-      // Fetch de Proveedores
-      const suppliersResponse = await fetch(`${API_BASE_URL}/proveedores/activos`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
       if (!suppliersResponse.ok) throw new Error('Error al cargar proveedores.');
-      const suppliersData: ProveedorSeleccionable[] = await suppliersResponse.json();
-      setProveedoresDisponibles(suppliersData);
 
+      const productsData: ProductoAPI[] = await productsResponse.json();
+      const suppliersData: ProveedorSeleccionable[] = await suppliersResponse.json();
+
+      setProductosDisponibles(productsData.flatMap(p => p.variantes.map(v => ({
+        id_producto_talla: v.id_producto_talla, id_producto: p.id, nombre_producto: p.nombre,
+        id_talla: v.id_talla, nombre_talla: v.nombre_talla, color: v.color,
+        stock_disponible: v.stock, precio_unitario: parseFloat(p.valor) || 0
+      }))));
+      setProveedoresDisponibles(suppliersData);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Error desconocido";
-      setErrorSelects(`Error al cargar opciones: ${errorMessage}`);
-      toast.error(`Error al cargar opciones: ${errorMessage}`);
+      toast.error(`Error al cargar opciones: ${err instanceof Error ? err.message : "Error desconocido"}`);
     } finally {
       setLoadingSelects(false);
     }
   };
 
-  // Efecto para la carga inicial de datos.
-  useEffect(() => {
-    fetchCompras();
-  }, [isAuthenticated, token]);
+  useEffect(() => { if(isAuthenticated) fetchCompras(); }, [isAuthenticated, token]);
+  useEffect(() => { if (isModalOpen && isAuthenticated) fetchSelectOptions(); }, [isModalOpen, isAuthenticated]);
 
-  // Se asegura de que las opciones estén cargadas cuando el modal de agregar/editar abre.
-  useEffect(() => {
-    if (isModalOpen && (!productosDisponibles.length || !proveedoresDisponibles.length)) {
-      fetchSelectOptions();
-    }
-  }, [isModalOpen]);
-
-
-  // --- LÓGICA DE BÚSQUEDA Y PAGINACIÓN EN EL CLIENTE ---
   const { currentTableData, totalPages, totalItems } = useMemo(() => {
-    let filteredCompras = allCompras;
-
-    if (searchTerm) {
-      const lowercasedFilter = searchTerm.toLowerCase();
-      filteredCompras = allCompras.filter(compra =>
-        compra.id.toString().includes(lowercasedFilter) ||
-        compra.nombre_proveedor.toLowerCase().includes(lowercasedFilter) ||
-        (compra.estado === 1 ? 'completada' : 'anulada').includes(lowercasedFilter) ||
-        new Date(compra.fecha).toLocaleDateString('es-CO').includes(lowercasedFilter)
-      );
-    }
-
-    const totalItems = filteredCompras.length;
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-
-    const paginatedData = filteredCompras.slice(
-      (currentPage - 1) * itemsPerPage,
-      currentPage * itemsPerPage
+    const sorted = [...allCompras].sort((a, b) => a.id - b.id)
+    const filtered = sorted.filter(c =>
+      c.id.toString().includes(searchTerm.toLowerCase()) ||
+      c.nombre_proveedor.toLowerCase().includes(searchTerm.toLowerCase())
     );
-
-    return { currentTableData: paginatedData, totalPages, totalItems };
+    return {
+      currentTableData: filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage),
+      totalPages: Math.ceil(filtered.length / itemsPerPage),
+      totalItems: filtered.length,
+    };
   }, [allCompras, searchTerm, currentPage, itemsPerPage]);
 
+  const handlePageChange = (e: React.ChangeEvent<unknown>, v: number) => setCurrentPage(v);
+  const handleChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => { setSearchTerm(e.target.value); setCurrentPage(1); };
+  const handleItemsPerPageChange = (e: SelectChangeEvent<number>) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); };
 
-  // --- MANEJADORES DE PAGINACIÓN Y BÚSQUEDA ---
-  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
-    setCurrentPage(value);
-  };
-
-  const handleChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-    setCurrentPage(1); // Resetear a la página 1 en cada nueva búsqueda
-  };
-
-  const handleItemsPerPageChange = (event: SelectChangeEvent<number>) => {
-    setItemsPerPage(Number(event.target.value));
-    setCurrentPage(1);
-  };
-
-  /**
-   * @function abrirDetalle
-   * @description Obtiene y muestra los detalles de una compra (CORREGIDO).
-   */
   const abrirDetalle = async (compra: Compra) => {
-    if (!isAuthenticated || !token) {
-      toast.error("No estás autorizado para ver detalles.");
-      return;
-    }
-    setLoadingDetalle(true);
-    setErrorDetalle(null);
-    setDetalleActual(null);
-    setProductosDetalle([]);
     setModalDetalleOpen(true);
-
+    setLoadingDetalle(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/compras/${compra.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Error al cargar detalle: ${response.status}`);
-      }
-
+      const response = await fetch(`${API_BASE_URL}/compras/${compra.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!response.ok) throw new Error("No se pudo cargar el detalle.");
       const data = await response.json();
-
-      // **CORRECCIÓN CLAVE**: Se procesa la respuesta directa de la API.
-      const compraDetallada = { ...data, total: parseFloat(data.total) || 0 };
-      setDetalleActual(compraDetallada);
-
-      const productosParseados = (data.items || []).map((p: any) => ({
-        id: p.id_compra_prod_item, // Usar un ID único para la key de React
-        id_producto: p.id_producto,
-        id_talla: p.id_talla,
-        id_producto_talla: p.id_producto_talla,
-        nombre_producto: p.nombre_producto,
-        nombre_talla: p.nombre_talla,
-        color: p.color,
-        cantidad: p.cantidad,
-        precio_unitario: parseFloat(p.precio_unitario) || 0,
-        subtotal: parseFloat(p.subtotal) || 0,
-      }));
-      setProductosDetalle(productosParseados);
-
+      setDetalleActual({ ...data, total: parseFloat(data.total) || 0 });
+      setProductosDetalle((data.items || []).map((p: any) => ({ ...p, id: p.id_compra_prod_item, precio_unitario: parseFloat(p.precio_unitario), subtotal: parseFloat(p.subtotal) })));
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Error desconocido";
-      setErrorDetalle(`Error al cargar el detalle: ${errorMessage}`);
-      toast.error(`Error al cargar detalle: ${errorMessage}`);
+      toast.error(`Error al ver detalle: ${err instanceof Error ? err.message : "Error desconocido"}`);
     } finally {
       setLoadingDetalle(false);
     }
   };
 
-  const cerrarDetalle = () => {
-    setModalDetalleOpen(false);
-  };
-
   const abrirModalAgregar = () => {
     setModoEdicion(false);
     setCompraEditandoId(null);
-    setNuevaCompra({
-      fecha: new Date().toISOString().split("T")[0],
-      tipo_pago: "Efectivo",
-      id_proveedor: null,
-      productos: [],
-    });
+    setNuevaCompra({ fecha: new Date().toISOString().split("T")[0], tipo_pago: "Efectivo", id_proveedor: null, productos: [] });
     setIsModalOpen(true);
   };
-  
-  const abrirModalEditar = async (compraId: number) => {
-    if (!isAuthenticated || !token) {
-      toast.error("No estás autorizado para editar.");
-      return;
-    }
-    setLoading(true);
-    setIsModalOpen(true);
-    setModoEdicion(true);
-    setCompraEditandoId(compraId);
 
-    try {
-        if (!productosDisponibles.length || !proveedoresDisponibles.length) {
-            await fetchSelectOptions();
-        }
+  const cerrarModal = () => setIsModalOpen(false);
 
-        const response = await fetch(`${API_BASE_URL}/compras/${compraId}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!response.ok) throw new Error("No se pudo cargar la compra para editar.");
-
-        const data = await response.json();
-        
-        const productosParaEditar = (data.items || []).map((p: any) => ({
-            id_producto_talla: p.id_producto_talla,
-            id_producto: p.id_producto,
-            id_talla: p.id_talla,
-            color: p.color,
-            nombre_producto: p.nombre_producto,
-            nombre_talla: p.nombre_talla,
-            precio_unitario: parseFloat(p.precio_unitario),
-            cantidad: p.cantidad,
-        }));
-
-        setNuevaCompra({
-            fecha: new Date(data.fecha).toISOString().split('T')[0],
-            tipo_pago: data.tipo_pago,
-            id_proveedor: data.id_proveedor,
-            productos: productosParaEditar,
-        });
-
-    } catch (err) {
-        toast.error(`Error al cargar para edición: ${err instanceof Error ? err.message : "Error"}`);
-        cerrarModal();
-    } finally {
-        setLoading(false);
-    }
-  };
-
-
-  const cerrarModal = () => {
-    setIsModalOpen(false);
-    setModoEdicion(false);
-  };
-
-
-  // --- MANEJADORES DE CAMBIOS EN EL FORMULARIO DEL MODAL ---
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>
-  ) => {
-    const { name, value } = e.target;
-    setNuevaCompra((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  const handleProductoChange = (
-    index: number,
-    e: React.ChangeEvent<HTMLInputElement> | SelectChangeEvent<any>
-  ) => {
-    const { name, value } = e.target;
-    setNuevaCompra((prev) => {
+  const handleProductoChange = (index: number, field: string, value: any) => {
+    setNuevaCompra(prev => {
       const updatedProductos = [...prev.productos];
-      if (name === "id_producto_talla") {
-        const selected = productosDisponibles.find(p => p.id_producto_talla === Number(value));
-        if (selected) {
-          updatedProductos[index] = {
-            ...updatedProductos[index],
-            id_producto_talla: selected.id_producto_talla,
-            id_producto: selected.id_producto,
-            id_talla: selected.id_talla,
-            color: selected.color,
-            nombre_producto: selected.nombre_producto,
-            nombre_talla: selected.nombre_talla,
-            precio_unitario: selected.precio_unitario,
-            cantidad: updatedProductos[index].cantidad || 1,
-          };
-        }
-      } else {
-        updatedProductos[index] = { ...updatedProductos[index], [name]: Number(value) };
+      if (field === 'producto') {
+        updatedProductos[index] = value ? { ...(value as ProductoSeleccionable), cantidad: 1 } : {};
+      } else if (field === 'cantidad') {
+        const cantidad = Math.max(1, parseInt(String(value).replace(/[^0-9]/g, ''), 10) || 1);
+        updatedProductos[index] = { ...updatedProductos[index], cantidad };
+      } else if (field === 'precio_unitario') {
+        updatedProductos[index] = { ...updatedProductos[index], precio_unitario: parseFloat(value) || 0 };
       }
       return { ...prev, productos: updatedProductos };
     });
   };
 
-  const agregarProducto = () => {
-    setNuevaCompra((prev) => ({
-      ...prev,
-      productos: [...prev.productos, {
-        id_producto_talla: 0, id_producto: 0, id_talla: 0, color: '',
-        nombre_producto: '', nombre_talla: '', precio_unitario: 0, cantidad: 1,
-      }],
-    }));
-  };
+  const agregarProducto = () => setNuevaCompra(prev => ({ ...prev, productos: [...prev.productos, {}] }));
+  const eliminarProducto = (index: number) => setNuevaCompra(prev => ({ ...prev, productos: prev.productos.filter((_, i) => i !== index) }));
 
-  const eliminarProducto = (index: number) => {
-    setNuevaCompra((prev) => ({
-      ...prev,
-      productos: prev.productos.filter((_, i) => i !== index),
-    }));
-  };
-
-  // --- Cálculo de totales ---
   const { subtotal, iva, total } = useMemo(() => {
-    const subtotal = nuevaCompra.productos.reduce(
-      (acc, p) => acc + (p.precio_unitario || 0) * (p.cantidad || 0), 0
-    );
-    const iva = subtotal * 0.19;
-    const total = subtotal + iva;
-    return { subtotal, iva, total };
+    const sub = nuevaCompra.productos.reduce((acc, p) => acc + (p.precio_unitario || 0) * (p.cantidad || 0), 0);
+    const tax = sub * 0.19;
+    return { subtotal: sub, iva: tax, total: sub + tax };
   }, [nuevaCompra.productos]);
 
-  /**
-   * @function guardarCompra
-   * @description Envía los datos para crear o editar una compra.
-   */
   const guardarCompra = async () => {
     if (!nuevaCompra.id_proveedor) return toast.warn("Debes seleccionar un proveedor.");
-    if (nuevaCompra.productos.length === 0) return toast.warn("Debes agregar al menos un producto.");
-    
-    const productosValidos = nuevaCompra.productos.every(p => p.id_producto_talla > 0 && p.cantidad > 0);
-    if (!productosValidos) return toast.warn("Verifica que todos los productos tengan variante seleccionada y cantidad válida.");
-    
-    if (!isAuthenticated || !token) return toast.error("No estás autorizado.");
+    if (nuevaCompra.productos.length === 0 || nuevaCompra.productos.some(p => !p.id_producto_talla)) return toast.warn("Todos los items deben tener un producto seleccionado y cantidad válida.");
 
     const payload = {
-      fecha: nuevaCompra.fecha,
-      tipo_pago: nuevaCompra.tipo_pago,
-      estado: 1,
+      fecha: nuevaCompra.fecha, 
+      tipo_pago: nuevaCompra.tipo_pago, 
+      estado: 1, // 1 = activa, 0 = anulada
       id_proveedor: nuevaCompra.id_proveedor,
       productosComprados: nuevaCompra.productos.map(p => ({
-        id_producto: p.id_producto,
-        id_talla: p.id_talla,
-        color: p.color,
-        cantidad: p.cantidad,
-        precio_unitario: p.precio_unitario,
+        id_producto: p.id_producto, 
+        id_talla: p.id_talla, 
+        color: p.color, 
+        cantidad: p.cantidad, 
+        precio_unitario: p.precio_unitario
       })),
     };
 
-    const isEditing = modoEdicion && compraEditandoId !== null;
-    const url = isEditing ? `${API_BASE_URL}/compras/completa/${compraEditandoId}` : `${API_BASE_URL}/compras/completa`;
-    const method = isEditing ? 'PUT' : 'POST';
+    console.log('=== CREANDO COMPRA ===');
+    console.log('Payload enviado:', payload);
+    console.log('Estado enviado:', payload.estado, '(1 = activa, 0 = anulada)');
 
     try {
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload),
+      const response = await fetch(`${API_BASE_URL}/compras/completa`, {
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, 
+        body: JSON.stringify(payload)
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || 'Error al guardar la compra.');
+      
+      console.log('Respuesta del servidor:', response.status, response.statusText);
+      
+      if (!response.ok) { 
+        const err = await response.json(); 
+        console.error('Error del servidor:', err);
+        throw new Error(err.error || 'Error al guardar la compra'); 
       }
-
-      toast.success(`Compra ${isEditing ? 'actualizada' : 'creada'} correctamente.`);
-      await fetchCompras(); 
-      await fetchSelectOptions();// Recargar toda la lista
+      
+      const responseData = await response.json();
+      console.log('Datos de respuesta:', responseData);
+      
+      toast.success("Compra creada con éxito.");
+      await fetchCompras();
       cerrarModal();
-
     } catch (err) {
+      console.error('Error completo:', err);
       toast.error(`Error al guardar: ${err instanceof Error ? err.message : "Error desconocido"}`);
     }
   };
 
-  const solicitarConfirmacionAnulacion = (compra: Compra) => {
-    setCompraAAnular(compra);
-    setConfirmDialogOpen(true);
-  };
-
+  const solicitarConfirmacionAnulacion = (compra: Compra) => { setCompraAAnular(compra); setConfirmDialogOpen(true); };
+  
   const confirmarAnulacion = async () => {
-    if (!isAuthenticated || !token || !compraAAnular) return;
-
+    if (!compraAAnular) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/compras/completa/${compraAAnular.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ estado: 0 }),
-      });
-
-      if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Error al anular compra.`);
-      }
-
-      toast.success("Compra anulada y stock revertido.");
-      await fetchCompras();
-      await fetchSelectOptions(); // Recargar lista
+        const response = await fetch(`${API_BASE_URL}/compras/completa/${compraAAnular.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ estado: 0 }),
+        });
+        if (!response.ok) { const err = await response.json(); throw new Error(err.error || `Error al anular compra.`); }
+        toast.success("Compra anulada y stock revertido.");
+        await fetchCompras();
     } catch (err) {
-      toast.error(`Error al anular: ${err instanceof Error ? err.message : "Error desconocido"}`);
+        toast.error(`Error al anular: ${err instanceof Error ? err.message : "Error desconocido"}`);
     } finally {
-      setConfirmDialogOpen(false);
-      setCompraAAnular(null);
+        setConfirmDialogOpen(false);
+        setCompraAAnular(null);
     }
   };
 
-  /**
-   * @function generarPDF
-   * @description Obtiene datos frescos y genera un PDF para una compra (CORREGIDO).
-   */
   const generarPDF = async (compra: Compra) => {
     toast.info("Generando PDF...", { autoClose: 1500 });
-    if (!isAuthenticated || !token) return toast.error("No autorizado.");
-
     try {
-      // 1. Obtener los detalles actualizados de la compra
-      const response = await fetch(`${API_BASE_URL}/compras/${compra.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await fetch(`${API_BASE_URL}/compras/${compra.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
       if (!response.ok) throw new Error('No se pudo obtener el detalle para el PDF.');
       const compraDetalle = await response.json();
 
-      // 2. Crear el documento PDF
       const doc = new jsPDF();
-      doc.setFontSize(18);
-      doc.text("Detalle de Compra", 14, 22);
-
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      // === ENCABEZADO CON DISEÑO PROFESIONAL ===
+      // Fondo del encabezado con gradiente simulado
+      doc.setFillColor(59, 130, 246); // Azul moderno (blue-500)
+      doc.rect(0, 0, pageWidth, 35, 'F');
+      
+      // Segundo tono para simular gradiente
+      doc.setFillColor(37, 99, 235); // Azul más oscuro (blue-600)
+      doc.rect(0, 0, pageWidth, 8, 'F');
+      
+      // Logo/Texto de la empresa
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.text('ConchaSoft', 20, 20);
+      
+      // Subtítulo
       doc.setFontSize(12);
-      doc.text(`ID: #${compraDetalle.id}`, 14, 32);
-      doc.text(`Fecha: ${new Date(compraDetalle.fecha).toLocaleDateString('es-CO')}`, 14, 40);
-      doc.text(`Proveedor: ${compraDetalle.nombre_proveedor}`, 14, 48);
-      doc.text(`Total: $${(parseFloat(compraDetalle.total) || 0).toLocaleString('es-CO')}`, 14, 56);
-      doc.text(`Estado: ${compraDetalle.estado === 1 ? 'Completada' : 'Anulada'}`, 14, 64);
-
-      // 3. Crear la tabla de productos (usando los datos frescos)
+      doc.setFont('helvetica', 'normal');
+      doc.text('Sistema de Gestión Comercial', 20, 28);
+      
+      // Fecha de generación
+      doc.setFontSize(10);
+      doc.text(`Generado: ${new Date().toLocaleString('es-CO')}`, pageWidth - 60, 20);
+      
+      // === TÍTULO DEL DOCUMENTO ===
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('ORDEN DE COMPRA', pageWidth / 2, 55, { align: 'center' });
+      
+      // Línea decorativa con colores modernos
+      doc.setDrawColor(59, 130, 246); // Azul moderno
+      doc.setLineWidth(3);
+      doc.line(20, 60, pageWidth - 20, 60);
+      
+      // Línea secundaria más sutil
+      doc.setDrawColor(147, 197, 253); // Azul claro
+      doc.setLineWidth(1);
+      doc.line(20, 63, pageWidth - 20, 63);
+      
+      // === INFORMACIÓN DE LA COMPRA ===
+      let yPosition = 75;
+      
+      // Información principal en dos columnas
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('INFORMACIÓN DE LA COMPRA', 20, yPosition);
+      yPosition += 8;
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      
+      // Columna izquierda
+      doc.text(`Número de Compra: #${compraDetalle.id}`, 20, yPosition);
+      doc.text(`Fecha: ${new Date(compraDetalle.fecha).toLocaleDateString('es-CO', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      })}`, 20, yPosition + 6);
+      doc.text(`Tipo de Pago: ${compraDetalle.tipo_pago}`, 20, yPosition + 12);
+      
+      // Columna derecha
+      doc.text(`Proveedor: ${compraDetalle.nombre_proveedor}`, pageWidth / 2, yPosition);
+      
+      // Estado con color (sin sobreescribir)
+      doc.setFont('helvetica', 'bold');
+      if (compraDetalle.estado === 1) {
+        doc.setTextColor(34, 197, 94); // Verde esmeralda más bonito
+      } else {
+        doc.setTextColor(239, 68, 68); // Rojo coral más bonito
+      }
+      doc.text(`Estado: ${compraDetalle.estado === 1 ? 'COMPLETADA' : 'ANULADA'}`, pageWidth / 2, yPosition + 6);
+      
+      // Restaurar color negro para el resto del texto
+      doc.setTextColor(0, 0, 0);
+      
+      yPosition += 25;
+      
+      // === TABLA DE PRODUCTOS ===
       const productosParaPdf = compraDetalle.items || [];
       if (productosParaPdf.length > 0) {
+        // Calcular totales
+        const subtotal = productosParaPdf.reduce((sum: number, p: any) => sum + (p.precio_unitario * p.cantidad), 0);
+        const iva = subtotal * 0.19;
+        const total = subtotal + iva;
+        
+        // Encabezado de la tabla
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('DETALLE DE PRODUCTOS', 20, yPosition);
+        yPosition += 8;
+        
         autoTable(doc, {
-          startY: 75,
+          startY: yPosition,
           head: [["Producto", "Talla", "Color", "Cant.", "P. Unitario", "Subtotal"]],
+          headStyles: {
+            fillColor: [59, 130, 246], // Azul moderno
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
           body: productosParaPdf.map((p: any) => [
-            p.nombre_producto, p.nombre_talla, p.color, p.cantidad,
-            `$${(parseFloat(p.precio_unitario) || 0).toLocaleString('es-CO')}`,
-            `$${(parseFloat(p.subtotal) || 0).toLocaleString('es-CO')}`
+            p.nombre_producto,
+            p.nombre_talla,
+            p.color,
+            p.cantidad.toString(),
+            new Intl.NumberFormat('es-CO', { 
+              style: 'currency', 
+              currency: 'COP', 
+              maximumFractionDigits: 0 
+            }).format(p.precio_unitario),
+            new Intl.NumberFormat('es-CO', { 
+              style: 'currency', 
+              currency: 'COP', 
+              maximumFractionDigits: 0 
+            }).format(p.precio_unitario * p.cantidad)
           ]),
+          styles: {
+            fontSize: 9,
+            cellPadding: 4
+          },
+          alternateRowStyles: {
+            fillColor: [248, 250, 252] // Gris muy claro moderno
+          },
+          margin: { left: 20, right: 20 }
         });
-      } else {
-        doc.text("Esta compra no tiene productos registrados.", 14, 85);
+        
+        // === RESUMEN FINANCIERO ===
+        const finalY = (doc as any).lastAutoTable.finalY || yPosition + 50;
+        yPosition = finalY + 15;
+        
+        // Fondo para el resumen con gradiente sutil
+        doc.setFillColor(249, 250, 251); // Gris muy claro
+        doc.rect(20, yPosition - 5, pageWidth - 40, 40, 'F');
+        
+        // Borde superior con color
+        doc.setDrawColor(59, 130, 246); // Azul moderno
+        doc.setLineWidth(2);
+        doc.line(20, yPosition - 5, pageWidth - 20, yPosition - 5);
+        
+        // Bordes del resumen
+        doc.setDrawColor(209, 213, 219); // Gris suave
+        doc.setLineWidth(0.5);
+        doc.rect(20, yPosition - 5, pageWidth - 40, 40);
+        
+        // Texto del resumen
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('RESUMEN FINANCIERO', 25, yPosition + 5);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.text(`Subtotal:`, pageWidth - 80, yPosition + 5);
+        doc.text(new Intl.NumberFormat('es-CO', { 
+          style: 'currency', 
+          currency: 'COP', 
+          maximumFractionDigits: 0 
+        }).format(subtotal), pageWidth - 25, yPosition + 5, { align: 'right' });
+        
+        doc.text(`IVA (19%):`, pageWidth - 80, yPosition + 12);
+        doc.text(new Intl.NumberFormat('es-CO', { 
+          style: 'currency', 
+          currency: 'COP', 
+          maximumFractionDigits: 0 
+        }).format(iva), pageWidth - 25, yPosition + 12, { align: 'right' });
+        
+        // Línea separadora
+        doc.setDrawColor(100, 100, 100);
+        doc.setLineWidth(1);
+        doc.line(pageWidth - 80, yPosition + 16, pageWidth - 25, yPosition + 16);
+        
+        // Total
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text(`TOTAL:`, pageWidth - 80, yPosition + 25);
+        doc.text(new Intl.NumberFormat('es-CO', { 
+          style: 'currency', 
+          currency: 'COP', 
+          maximumFractionDigits: 0 
+        }).format(total), pageWidth - 25, yPosition + 25, { align: 'right' });
+        
+        yPosition += 50;
       }
-
-      doc.save(`compra-${compra.id}.pdf`);
+      
+      // === PIE DE PÁGINA ===
+      const footerY = pageHeight - 30;
+      
+      // Línea superior del pie con color moderno
+      doc.setDrawColor(59, 130, 246); // Azul moderno
+      doc.setLineWidth(1);
+      doc.line(20, footerY, pageWidth - 20, footerY);
+      
+      // Información del pie
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      doc.text('Este documento fue generado automáticamente por ConchaSoft', 20, footerY + 8);
+      doc.text(`Página 1 de 1`, pageWidth - 30, footerY + 8, { align: 'right' });
+      
+      // Información de contacto
+      doc.text('Sistema de Gestión Comercial - ConchaSoft', 20, footerY + 16);
+      doc.text('www.conchasoft.com', pageWidth - 30, footerY + 16, { align: 'right' });
+      
+      // === GUARDAR EL PDF ===
+      const fileName = `compra-${compraDetalle.id}-${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+      
+      toast.success("PDF generado exitosamente");
     } catch (err) {
-      toast.error(`Error al generar PDF: ${err instanceof Error ? err.message : "Error"}`);
+      toast.error(`Error al generar PDF: ${err instanceof Error ? err.message : "Error desconocido"}`);
     }
   };
 
-  if (loading && allCompras.length === 0) {
-    return <div className="p-4 text-center">Cargando compras...</div>;
-  }
-
-  if (error) {
-    return <div className="p-4 text-center text-red-500">Error: {error}</div>;
-  }
+  if (loading && allCompras.length === 0) return <div className="p-4 text-center">Cargando compras...</div>;
+  if (error) return <div className="p-4 text-center text-red-500">{error}</div>;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-400 bg-gray-200 dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="p-4 flex flex-col sm:flex-row items-center justify-between flex-wrap gap-4">
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          onClick={abrirModalAgregar}
-        >
-          Agregar Compra
-        </Button>
-
+    <div className="overflow-hidden rounded-xl border border-gray-400 bg-gray-200">
+      <div className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={abrirModalAgregar}>Agregar Compra</Button>
         <div className="flex items-center gap-4 w-full sm:w-auto">
-          <input
-            type="text"
-            placeholder="Buscar por ID, proveedor..."
-            value={searchTerm}
-            onChange={handleChangeSearch}
-            className="border border-gray-400 bg-white rounded px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
-
-          <FormControl sx={{ minWidth: 120 }} size="small">
+          <TextField label="Buscar por ID o Proveedor" variant="outlined" size="small" value={searchTerm} onChange={handleChangeSearch} />
+          <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel>Items/pág</InputLabel>
-            <Select
-              value={itemsPerPage}
-              label="Items/pág"
-              onChange={handleItemsPerPageChange}
-            >
-              <MenuItem value={5}>5</MenuItem>
-              <MenuItem value={10}>10</MenuItem>
-              <MenuItem value={20}>20</MenuItem>
-              <MenuItem value={50}>50</MenuItem>
-            </Select>
+            <Select value={itemsPerPage} label="Items/pág" onChange={handleItemsPerPageChange}><MenuItem value={5}>5</MenuItem><MenuItem value={10}>10</MenuItem><MenuItem value={20}>20</MenuItem></Select>
           </FormControl>
         </div>
       </div>
 
       <div className="max-w-full overflow-x-auto">
         <Table>
-          <TableHeader className="border-b border-gray-400 dark:border-white/[0.05]">
-            <TableRow>
-              <TableCell isHeader>ID</TableCell>
-              <TableCell isHeader>Fecha</TableCell>
-              <TableCell isHeader>Proveedor</TableCell>
-              <TableCell isHeader>Total</TableCell>
-              <TableCell isHeader>Estado</TableCell>
-              <TableCell isHeader>Acciones</TableCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody className="divide-y divide-gray-400 dark:divide-white/[0.05]">
-            {currentTableData.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-4">
-                  {searchTerm ? "No se encontraron resultados." : "No hay compras registradas."}
+          <TableHeader><TableRow><TableCell isHeader>ID</TableCell><TableCell isHeader>Fecha</TableCell><TableCell isHeader>Proveedor</TableCell><TableCell isHeader>Total</TableCell><TableCell isHeader>Estado</TableCell><TableCell isHeader>Acciones</TableCell></TableRow></TableHeader>
+          <TableBody>
+            {currentTableData.map((compra) => (
+              <TableRow key={compra.id}>
+                <TableCell>#{compra.id}</TableCell>
+                <TableCell>{new Date(compra.fecha).toLocaleDateString('es-CO')}</TableCell>
+                <TableCell>{compra.nombre_proveedor}</TableCell>
+                <TableCell>{new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(compra.total)}</TableCell>
+                <TableCell><span className={`px-2 py-1 rounded-full text-xs font-semibold ${compra.estado === 1 ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>{compra.estado === 1 ? "Completada" : "Anulada"}</span></TableCell>
+                <TableCell className="space-x-1">
+                  <Tooltip title="Ver Detalle"><IconButton color="secondary" onClick={() => abrirDetalle(compra)}><VisibilityIcon /></IconButton></Tooltip>
+                  <Tooltip title="Descargar PDF"><IconButton onClick={() => generarPDF(compra)}><PictureAsPdfIcon /></IconButton></Tooltip>
+                  <Tooltip title={compra.estado === 0 ? 'La compra ya está anulada' : 'Anular Compra'}><span><IconButton color="error" onClick={() => solicitarConfirmacionAnulacion(compra)} disabled={compra.estado === 0}><CancelIcon /></IconButton></span></Tooltip>
                 </TableCell>
               </TableRow>
-            ) : (
-              currentTableData.map((compra) => (
-                <TableRow key={compra.id}>
-                  <TableCell className="font-medium">#{compra.id}</TableCell>
-                  <TableCell>{new Date(compra.fecha).toLocaleDateString('es-CO')}</TableCell>
-                  <TableCell>{compra.nombre_proveedor}</TableCell>
-                  <TableCell>${compra.total.toLocaleString('es-CO', { minimumFractionDigits: 2 })}</TableCell>
-                  <TableCell>
-                     <span className={`px-2 py-1 rounded-full text-xs font-semibold ${compra.estado === 1 ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
-                        {compra.estado === 1 ? "Completada" : "Anulada"}
-                     </span>
-                  </TableCell>
-                  <TableCell className="space-x-1">
-                    <Tooltip title="Ver Detalle">
-                      <IconButton color="secondary" onClick={() => abrirDetalle(compra)}>
-                        <VisibilityIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Editar Compra">
-                      <span>
-                        <IconButton
-                          color="primary"
-                          onClick={() => abrirModalEditar(compra.id)}
-                          disabled={compra.estado === 0}
-                        >
-                          <EditIcon />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                    <Tooltip title="Descargar PDF">
-                      <IconButton color="default" onClick={() => generarPDF(compra)}>
-                        <PictureAsPdfIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Anular Compra">
-                       <span>
-                          <IconButton
-                            color="error"
-                            onClick={() => solicitarConfirmacionAnulacion(compra)}
-                            disabled={compra.estado === 0}
-                          >
-                            <CancelIcon />
-                          </IconButton>
-                       </span>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
+            ))}
           </TableBody>
         </Table>
       </div>
 
-      <div className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <p className="text-sm text-gray-700">
-            Mostrando {currentTableData.length} de {totalItems} compras
-          </p>
-        {totalPages > 1 && (
-          <Pagination
-            count={totalPages}
-            page={currentPage}
-            onChange={handlePageChange}
-            color="primary"
-          />
-        )}
-      </div>
+      <div className="p-4 flex justify-between items-center"><p className="text-sm text-gray-700">Mostrando {currentTableData.length} de {totalItems}</p>{totalPages > 1 && <Pagination count={totalPages} page={currentPage} onChange={handlePageChange} color="primary" />}</div>
 
-      {/* Modal de Detalle de Compra */}
-      <Modal isOpen={modalDetalleOpen} handleClose={cerrarDetalle}>
-        <h2 className="text-2xl font-bold mb-6">Detalle de Compra #{detalleActual?.id}</h2>
-        {loadingDetalle ? <p>Cargando detalles...</p> : errorDetalle ? <p className="text-red-500">{errorDetalle}</p> : (
-          <>
+      <Modal isOpen={modalDetalleOpen} handleClose={() => setModalDetalleOpen(false)}>
+        <h2 className="text-2xl font-bold mb-4">Detalle de Compra #{detalleActual?.id}</h2>
+        {loadingDetalle ? <p>Cargando...</p> : <>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-              <div><strong>ID:</strong> #{detalleActual?.id}</div>
-              <div><strong>Fecha:</strong> {detalleActual?.fecha ? new Date(detalleActual.fecha).toLocaleDateString('es-CO') : ''}</div>
-              <div><strong>Total:</strong> ${detalleActual?.total?.toLocaleString('es-CO')}</div>
-              <div><strong>Estado:</strong> {detalleActual?.estado === 1 ? "Completada" : "Anulada"}</div>
-              <div><strong>Tipo Pago:</strong> {detalleActual?.tipo_pago}</div>
-              <div className="col-span-2 md:col-span-1"><strong>Proveedor:</strong> {detalleActual?.nombre_proveedor}</div>
+                <div><strong>ID:</strong> #{detalleActual?.id}</div>
+                <div><strong>Fecha:</strong> {detalleActual?.fecha ? new Date(detalleActual.fecha).toLocaleDateString('es-CO') : ''}</div>
+                <div><strong>Total:</strong> {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(detalleActual?.total || 0)}</div>
+                <div><strong>Estado:</strong> {detalleActual?.estado === 1 ? "Completada" : "Anulada"}</div>
+                <div className="col-span-2"><strong>Proveedor:</strong> {detalleActual?.nombre_proveedor}</div>
             </div>
-
-            <h3 className="text-xl font-bold mt-8 mb-4">Productos de la Compra</h3>
-            {productosDetalle.length === 0 ? <p>No hay productos en esta compra.</p> : (
-              <div className="overflow-x-auto border rounded-lg">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableCell isHeader>Producto</TableCell>
-                      <TableCell isHeader>Talla</TableCell>
-                      <TableCell isHeader>Color</TableCell>
-                      <TableCell isHeader>Cantidad</TableCell>
-                      <TableCell isHeader>P. Unitario</TableCell>
-                      <TableCell isHeader>Subtotal</TableCell>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {productosDetalle.map((prod) => (
-                      <TableRow key={prod.id}>
-                        <TableCell>{prod.nombre_producto}</TableCell>
-                        <TableCell>{prod.nombre_talla}</TableCell>
-                        <TableCell>{prod.color}</TableCell>
-                        <TableCell>{prod.cantidad}</TableCell>
-                        <TableCell>${prod.precio_unitario.toLocaleString('es-CO')}</TableCell>
-                        <TableCell>${prod.subtotal.toLocaleString('es-CO')}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            <div className="mt-8 flex justify-end">
-              <Button onClick={cerrarDetalle} variant="contained">Cerrar</Button>
+            <h3 className="text-xl font-bold mt-6 mb-2">Productos</h3>
+            <div className="space-y-2">
+            {productosDetalle.map((prod) => (
+                <div key={prod.id} className="flex justify-between items-center p-2 border rounded">
+                    <div className="flex items-center gap-2">
+                        <Box component="span" sx={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: prod.color, border: '1px solid #ccc' }} />
+                        <span>{prod.nombre_producto} ({prod.nombre_talla})</span>
+                    </div>
+                    <span>Cant: {prod.cantidad}</span>
+                </div>
+            ))}
             </div>
-          </>
-        )}
+          <div className="mt-8 flex justify-end"><Button onClick={() => setModalDetalleOpen(false)} variant="contained">Cerrar</Button></div>
+        </>}
       </Modal>
 
-      {/* Modal de Agregar/Editar Compra */}
-      <Dialog open={isModalOpen} onClose={cerrarModal} maxWidth="md" fullWidth>
-        <DialogTitle>{modoEdicion ? "Editar Compra" : "Agregar Nueva Compra"}</DialogTitle>
+      <Dialog open={isModalOpen} onClose={cerrarModal} maxWidth="lg" fullWidth>
+        <DialogTitle>Nueva Compra</DialogTitle>
         <DialogContent dividers>
-          {loadingSelects ? <p>Cargando opciones...</p> : errorSelects ? <p className="text-red-500">{errorSelects}</p> : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <FormControl>
-                  <TextField label="Fecha" type="date" name="fecha" value={nuevaCompra.fecha} onChange={handleChange} InputLabelProps={{ shrink: true }} />
-                </FormControl>
-                <FormControl fullWidth>
-                  <InputLabel>Tipo de Pago</InputLabel>
-                  <Select name="tipo_pago" value={nuevaCompra.tipo_pago} label="Tipo de Pago" onChange={handleChange}>
-                    <MenuItem value="Efectivo">Efectivo</MenuItem>
-                    <MenuItem value="Tarjeta">Tarjeta</MenuItem>
-                    <MenuItem value="Transferencia">Transferencia</MenuItem>
-                  </Select>
-                </FormControl>
-                <FormControl fullWidth>
-                  <InputLabel>Proveedor</InputLabel>
-                  <Select name="id_proveedor" value={nuevaCompra.id_proveedor || ''} label="Proveedor" onChange={handleChange}>
-                    <MenuItem value=""><em>Seleccionar Proveedor</em></MenuItem>
-                    {proveedoresDisponibles.map((prov) => (
-                      <MenuItem key={prov.id} value={prov.id}>{prov.nombre_comercial}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </div>
-
-              <div className="space-y-2">
-                <h3 className="font-semibold">Productos</h3>
-                {nuevaCompra.productos.map((prod, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-2 items-center p-2 border rounded-lg">
-                    <div className="col-span-12 sm:col-span-5">
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Producto / Talla / Color</InputLabel>
-                        <Select name="id_producto_talla" value={prod.id_producto_talla || ''} label="Producto / Talla / Color" onChange={(e) => handleProductoChange(i, e)}>
-                           {productosDisponibles.map((p) => (
-                             <MenuItem key={p.id_producto_talla} value={p.id_producto_talla}>
-                               {`${p.nombre_producto} - ${p.nombre_talla} - ${p.color} (Stock: ${p.stock_disponible})`}
-                             </MenuItem>
-                           ))}
-                        </Select>
-                      </FormControl>
-                    </div>
-                    <div className="col-span-6 sm:col-span-3">
-                       <TextField label="Precio Unitario" type="number" name="precio_unitario" value={prod.precio_unitario} onChange={(e) => handleProductoChange(i, e)} size="small" fullWidth/>
-                    </div>
-                    <div className="col-span-6 sm:col-span-2">
-                       <TextField label="Cantidad" type="number" name="cantidad" value={prod.cantidad} onChange={(e) => handleProductoChange(i, e)} size="small" fullWidth/>
-                    </div>
-                    <div className="col-span-12 sm:col-span-2 text-right">
-                      <Tooltip title="Eliminar Producto">
-                        <IconButton onClick={() => eliminarProducto(i)} color="error"><DeleteIcon /></IconButton>
-                      </Tooltip>
-                    </div>
-                  </div>
-                ))}
-                <Button variant="outlined" startIcon={<AddIcon />} onClick={agregarProducto}>Agregar Producto</Button>
-              </div>
-
-              <div className="mt-4 text-right">
-                <p>Subtotal: ${subtotal.toLocaleString('es-CO')}</p>
-                <p>IVA (19%): ${iva.toLocaleString('es-CO')}</p>
-                <p className="font-bold text-lg">Total: ${total.toLocaleString('es-CO')}</p>
-              </div>
+          <div className="space-y-6 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <TextField label="Fecha" type="date" value={nuevaCompra.fecha} InputLabelProps={{ shrink: true }} disabled />
+              <FormControl fullWidth><InputLabel>Tipo de Pago</InputLabel><Select name="tipo_pago" value={nuevaCompra.tipo_pago} label="Tipo de Pago" onChange={(e) => setNuevaCompra(p => ({ ...p, tipo_pago: e.target.value }))}><MenuItem value="Efectivo">Efectivo</MenuItem><MenuItem value="Tarjeta">Tarjeta</MenuItem><MenuItem value="Transferencia">Transferencia</MenuItem></Select></FormControl>
+              <FormControl fullWidth><InputLabel>Proveedor*</InputLabel><Select required name="id_proveedor" value={nuevaCompra.id_proveedor || ''} label="Proveedor*" onChange={(e) => setNuevaCompra(p => ({ ...p, id_proveedor: Number(e.target.value) }))}>{proveedoresDisponibles.map(p => <MenuItem key={p.id} value={p.id}>{p.nombre_comercial}</MenuItem>)}</Select></FormControl>
             </div>
-          )}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-lg">Productos</h3>
+              {nuevaCompra.productos.map((prod, i) => (
+                <div key={i} className="grid grid-cols-12 gap-3 items-center p-3 border rounded-lg bg-gray-50">
+                  <div className="col-span-12 md:col-span-5">
+                    <Autocomplete
+                      options={productosDisponibles}
+                      getOptionLabel={(option) => `${option.nombre_producto} - ${option.nombre_talla} (${option.color})`}
+                      value={productosDisponibles.find(p => p.id_producto_talla === prod.id_producto_talla) || null}
+                      onChange={(event, newValue) => handleProductoChange(i, 'producto', newValue)}
+                      isOptionEqualToValue={(option, value) => option.id_producto_talla === value.id_producto_talla}
+                      renderOption={(props, option) => (
+                        <Box component="li" {...props}>
+                          <Box sx={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: option.color, mr: 1.5, border: '1px solid #ccc', flexShrink: 0 }} />
+                          {option.nombre_producto} - {option.nombre_talla} (Stock: {option.stock_disponible})
+                        </Box>
+                      )}
+                      renderInput={(params) => <TextField {...params} label="Buscar Producto*" size="small" />}
+                    />
+                  </div>
+                  <div className="col-span-6 md:col-span-3">
+                    <TextField label="Precio Unitario" type="number" value={prod.precio_unitario || ''} onChange={(e) => handleProductoChange(i, 'precio_unitario', e.target.value)} size="small" fullWidth />
+                  </div>
+                  <div className="col-span-4 md:col-span-2">
+                    <TextField label="Cantidad*" type="text" value={prod.cantidad || ''} onChange={(e) => handleProductoChange(i, 'cantidad', e.target.value)} inputProps={{ pattern: "[0-9]*" }} size="small" fullWidth />
+                  </div>
+                  <div className="col-span-2 md:col-span-2 text-right">
+                    <Tooltip title="Eliminar Producto"><IconButton onClick={() => eliminarProducto(i)} color="error"><DeleteIcon /></IconButton></Tooltip>
+                  </div>
+                </div>
+              ))}
+              <Button variant="outlined" startIcon={<AddIcon />} onClick={agregarProducto}>Agregar Producto</Button>
+            </div>
+            <div className="mt-4 text-right space-y-1">
+                <p>Subtotal: {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(subtotal)}</p>
+                <p>IVA (19%): {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(iva)}</p>
+                <p className="font-bold text-lg">Total: {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(total)}</p>
+            </div>
+          </div>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={cerrarModal}>Cancelar</Button>
-          <Button onClick={guardarCompra} variant="contained">{modoEdicion ? "Actualizar" : "Guardar"}</Button>
-        </DialogActions>
+        <DialogActions><Button onClick={cerrarModal}>Cancelar</Button><Button onClick={guardarCompra} variant="contained">Guardar Compra</Button></DialogActions>
       </Dialog>
-
-      {/* Diálogo de Confirmación de Anulación */}
+      
       <Dialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)}>
         <DialogTitle>Confirmar Anulación</DialogTitle>
         <DialogContent>
-          <DialogContentText>
-            ¿Estás seguro de anular la compra <strong>#{compraAAnular?.id}</strong>? Esta acción revertirá el stock de los productos.
-          </DialogContentText>
+          <DialogContentText>¿Estás seguro de anular la compra <strong>#{compraAAnular?.id}</strong>? Esta acción revertirá el stock de los productos y no se puede deshacer.</DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmDialogOpen(false)}>Cancelar</Button>
-          <Button onClick={confirmarAnulacion} color="error">Anular</Button>
+          <Button onClick={confirmarAnulacion} color="error">Anular Compra</Button>
         </DialogActions>
       </Dialog>
     </div>

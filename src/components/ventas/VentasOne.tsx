@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from 'react-toastify';
 
@@ -10,13 +10,16 @@ import {
   TableRow,
 } from "../ui/table";
 import Button from "@mui/material/Button";
+import TextField from '@mui/material/TextField';
+import InputAdornment from '@mui/material/InputAdornment';
 import IconButton from "@mui/material/IconButton";
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import CancelIcon from '@mui/icons-material/Cancel';
 import VisibilityIcon from '@mui/icons-material/Visibility';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import CancelIcon from '@mui/icons-material/Cancel'; // Para el modal de eliminación
+import DeleteIcon from '@mui/icons-material/Delete';
 import Tooltip from '@mui/material/Tooltip';
+import Modal from "../ui/modal/Modal";
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -29,403 +32,814 @@ import InputLabel from '@mui/material/InputLabel';
 import Select, { SelectChangeEvent } from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 
+
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+
 import { useAuth } from '../../context/authContext';
 
-const API_BASE_URL = 'https://conchasoft-api.onrender.com/api'; 
+// --- URL BASE DE LA API ---
+const API_BASE_URL = 'https://conchasoft-api.onrender.com/api';
 
-/**
- * @interface Venta
- * @description Define la estructura de un objeto Venta.
- */
+// --- INTERFACES DE DATOS PARA VENTAS ---
+
 interface Venta {
   id: number;
-  cliente: string;
-  fecha: string; // O Date, dependiendo de cómo lo manejes
+  fecha: string;
   total: number;
-  estado: string; // Por ejemplo: "Pendiente", "Completada", "Cancelada"
-  // Agrega aquí cualquier otro campo relevante que necesites para la edición o visualización
+  estado: 'Completado' | 'Devuelto Parcialmente' | 'Devuelto Totalmente' | 'Anulado';
+  tipo_pago: string;
+  id_cliente: number;
+  nombre: string;
+  apellido: string;
+  documento: string;
+  monto_saldo_usado?: number;
 }
 
+interface VentaProductoDetalle {
+  id_producto_talla: number;
+  nombre_producto: string;
+  nombre_talla: string;
+  color?: string | null;
+  cantidad: number;
+  precio_unitario: number;
+  subtotal: number;
+}
+
+interface ProductoAPI {
+  id: number;
+  nombre: string;
+  valor: string;
+  estado: 0 | 1;
+  nombre_marca: string;
+  variantes: {
+    id_producto_talla: number;
+    id_talla: number;
+    nombre_talla: string;
+    color: string;
+    stock: number;
+  }[];
+}
+
+interface ProductoParaVenta {
+  id_producto_talla: number;
+  nombre: string;
+  talla: string;
+  color: string;
+  stock: number;
+  precio_venta: number;
+}
+
+interface ClienteSeleccionable {
+  id: number;
+  nombre: string;
+  apellido: string;
+  documento: string;
+}
+
+// --- COMPONENTE PRINCIPAL ---
+
 export default function VentasTable() {
-  const [ventas, setVentas] = useState<Venta[]>([]);
+  const { token, isAuthenticated, logout } = useAuth();
+  const navigate = useNavigate();
+
+  // Estados principales
+  const [allVentas, setAllVentas] = useState<Venta[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const navigate = useNavigate();
-  const { token, isAuthenticated } = useAuth();
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-  const [ventaAEliminar, setVentaAEliminar] = useState<Venta | null>(null);
-
-  /**
-   * @state nuevaVenta
-   * @description Almacena los datos de la venta que se está creando o editando.
-   */
-  const [nuevaVenta, setNuevaVenta] = useState<Venta>({
-    id: 0,
-    cliente: "",
-    fecha: new Date().toISOString().split('T')[0], // Inicializa con la fecha actual en formato YYYY-MM-DD
-    total: 0,
-    estado: "Pendiente", // Estado inicial predeterminado
-  });
-
-  const [modoEdicion, setModoEdicion] = useState(false);
-  const [ventaEditandoId, setVentaEditandoId] = useState<number | null>(null);
-
+  // Estados de paginación y búsqueda
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
-  const [totalItems, setTotalItems] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
 
-  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Estados para modales
+  const [modalDetalleOpen, setModalDetalleOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+
+  // Estados para datos de modales
+  const [detalleActual, setDetalleActual] = useState<Venta | null>(null);
+  const [productosDetalle, setProductosDetalle] = useState<VentaProductoDetalle[]>([]);
+  const [loadingDetalle, setLoadingDetalle] = useState(false);
+  
+  const [ventaAAnular, setVentaAAnular] = useState<Venta | null>(null);
+
+  // Estados para formulario de nueva venta
+  const [nuevaVenta, setNuevaVenta] = useState({
+    fecha: new Date().toISOString().split("T")[0],
+    tipo_pago: "efectivo",
+    id_cliente: null as number | null,
+    saldo_a_favor_aplicado: 0,
+    productos: [] as {
+      id_producto_talla: number;
+      cantidad: number;
+      precio_unitario: number;
+      nombre_producto: string;
+      nombre_talla: string;
+      color: string;
+      stock_disponible: number;
+    }[],
+  });
+
+  // Estados para selects y datos auxiliares
+  const [productosDisponibles, setProductosDisponibles] = useState<ProductoParaVenta[]>([]);
+  const [clientesDisponibles, setClientesDisponibles] = useState<ClienteSeleccionable[]>([]);
+  const [loadingSelects, setLoadingSelects] = useState(false);
+  const [saldoCliente, setSaldoCliente] = useState<number>(0);
+
 
   /**
-   * @function fetchVentas
-   * @description Obtiene las ventas desde la API, aplicando paginación y búsqueda.
+   * Obtiene todas las ventas desde la API.
    */
   const fetchVentas = async () => {
     if (!isAuthenticated || !token) {
       setLoading(false);
-      setError("No autenticado. Por favor, inicia sesión para ver las ventas.");
-      toast.info("Necesitas iniciar sesión para ver las ventas.");
       return;
     }
-
     setLoading(true);
     setError(null);
     try {
-      const queryParams = new URLSearchParams({
-        page: currentPage.toString(),
-        limit: itemsPerPage.toString(),
+      const response = await fetch(`${API_BASE_URL}/ventas`, {
+        headers: { 'Authorization': `Bearer ${token}` },
       });
 
-      if (searchTerm) {
-        queryParams.append('search', searchTerm);
+      if (response.status === 401 || response.status === 403) {
+        toast.error("Sesión expirada o no autorizado.");
+        logout();
+        return;
       }
-
-      const response = await fetch(`${API_BASE_URL}/ventas?${queryParams.toString()}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: `Error HTTP: ${response.status}` }));
-        throw new Error(errorData.error || `Error HTTP: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (Array.isArray(data.ventas)) {
-        setVentas(data.ventas);
-      } else {
-        setVentas([]);
-      }
-
-      setTotalItems(data.totalItems || 0);
-      setTotalPages(data.totalPages || 1);
+      if (!response.ok) throw new Error("Error al cargar las ventas.");
+      
+      const data: Venta[] = await response.json();
+      console.log('Datos de ventas recibidos del backend:', data);
+      
+      // Obtener información completa del cliente para cada venta
+      const ventasConCliente = await Promise.all(
+        data.map(async (venta) => {
+          try {
+            const clienteResponse = await fetch(`${API_BASE_URL}/clientes/${venta.id_cliente}`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (clienteResponse.ok) {
+              const clienteData = await clienteResponse.json();
+              return {
+                ...venta,
+                documento: clienteData.documento || '',
+                total: parseFloat(String(venta.total))
+              };
+            }
+          } catch (error) {
+            console.error(`Error obteniendo cliente ${venta.id_cliente}:`, error);
+          }
+          return {
+            ...venta,
+            documento: '',
+            total: parseFloat(String(venta.total))
+          };
+        })
+      );
+      
+      setAllVentas(ventasConCliente);
 
     } catch (err) {
-      setError(`No se pudieron cargar las ventas: ${err instanceof Error ? err.message : "Error desconocido"}`);
-      toast.error(`Error al cargar las ventas: ${err instanceof Error ? err.message : "Error desconocido"}`);
-      setVentas([]);
+      const msg = err instanceof Error ? err.message : "Error desconocido.";
+      setError(`No se pudieron cargar las ventas: ${msg}`);
+      toast.error(`Error al cargar ventas: ${msg}`);
     } finally {
       setLoading(false);
     }
   };
 
+  /**
+   * Obtiene productos y clientes para los selectores del modal de creación.
+   */
+  const fetchSelectOptions = async () => {
+    if (!isAuthenticated || !token) return;
+    setLoadingSelects(true);
+    try {
+      // Cargar Productos con Stock - Usando el endpoint /productos/activos como en ComprasOne
+      const productsResponse = await fetch(`${API_BASE_URL}/productos/activos`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!productsResponse.ok) throw new Error('Error al cargar productos.');
+      const productsData = await productsResponse.json();
+      
+      console.log('Datos de productos recibidos:', productsData);
+      
+      // Verificar que productsData es un array y tiene la estructura esperada
+      if (Array.isArray(productsData)) {
+        const productosTransformados: ProductoParaVenta[] = productsData.flatMap((producto: ProductoAPI) => {
+          // Verificar que el producto tiene variantes
+          if (producto.variantes && Array.isArray(producto.variantes)) {
+            return producto.variantes.map((variante) => ({
+              id_producto_talla: variante.id_producto_talla,
+              nombre: producto.nombre,
+              talla: variante.nombre_talla,
+              color: variante.color,
+              stock: variante.stock,
+              precio_venta: parseFloat(producto.valor)
+            }));
+          }
+          return [];
+        });
+        setProductosDisponibles(productosTransformados);
+        console.log('Productos transformados:', productosTransformados);
+      } else {
+        console.error('productsData no es un array:', productsData);
+        setProductosDisponibles([]);
+      }
+
+      // Cargar Clientes
+      const clientsResponse = await fetch(`${API_BASE_URL}/clientes`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!clientsResponse.ok) throw new Error('Error al cargar clientes.');
+      const clientsData = await clientsResponse.json();
+      console.log('Datos de clientes recibidos:', clientsData);
+      setClientesDisponibles(clientsData);
+
+    } catch (err) {
+      console.error('Error en fetchSelectOptions:', err);
+      toast.error(`Error cargando opciones: ${err instanceof Error ? err.message : "Error"}`);
+    } finally {
+      setLoadingSelects(false);
+    }
+  };
+
   useEffect(() => {
     fetchVentas();
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
-    };
-  }, [isAuthenticated, token, currentPage, itemsPerPage]);
+  }, [isAuthenticated, token]);
 
   useEffect(() => {
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
+    if (isModalOpen) {
+      fetchSelectOptions();
     }
+  }, [isModalOpen]);
 
-    debounceTimeoutRef.current = setTimeout(() => {
-      if (currentPage !== 1 && searchTerm !== "") {
-          setCurrentPage(1);
-      } else {
-          fetchVentas();
-      }
-    }, 500);
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchSelectOptions();
+    }
+  }, [isAuthenticated, token]);
 
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
+  // --- LÓGICA DE BÚSQUEDA Y PAGINACIÓN ---
+  const { currentTableData, totalPages, totalItems } = useMemo(() => {
+    const lowercasedFilter = searchTerm.toLowerCase();
+    const filteredVentas = allVentas.filter(venta =>
+      venta.id.toString().includes(lowercasedFilter) ||
+      `${venta.nombre} ${venta.apellido}`.toLowerCase().includes(lowercasedFilter) ||
+      venta.estado.toLowerCase().includes(lowercasedFilter) ||
+      new Date(venta.fecha).toLocaleDateString('es-CO').includes(lowercasedFilter)
+    );
+    
+    const total = filteredVentas.length;
+    return {
+      currentTableData: filteredVentas.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage),
+      totalPages: Math.ceil(total / itemsPerPage),
+      totalItems: total,
     };
-  }, [searchTerm]);
+  }, [allVentas, searchTerm, currentPage, itemsPerPage]);
 
-  // --- PAGINATION AND SEARCH HANDLERS ---
-  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
-    setCurrentPage(value);
-  };
-
+  const handlePageChange = (_: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
   const handleChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setSearchTerm(value);
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
   };
-
-  const handleItemsPerPageChange = (event: SelectChangeEvent<number>) => {
-    setItemsPerPage(Number(event.target.value));
+  const handleItemsPerPageChange = (e: SelectChangeEvent<number>) => {
+    setItemsPerPage(Number(e.target.value));
     setCurrentPage(1);
   };
 
-  /**
-   * @function abrirModal
-   * @description Abre el modal para agregar una nueva venta.
-   * Reinicia el estado `nuevaVenta` a valores predeterminados.
-   */
-  const abrirModal = () => {
-    setNuevaVenta({ 
-      id: 0, 
-      cliente: "", 
-      fecha: new Date().toISOString().split('T')[0], 
-      total: 0, 
-      estado: "Pendiente" 
-    });
-    setModoEdicion(false);
-    setVentaEditandoId(null);
-    setIsModalOpen(true);
+  // --- MANEJO DE MODALES ---
+
+  const abrirDetalle = async (venta: Venta) => {
+    if (!token) return;
+    setModalDetalleOpen(true);
+    setLoadingDetalle(true);
+    try {
+      // Primero aseguramos que tenemos los productos disponibles cargados
+      if (productosDisponibles.length === 0) {
+        await fetchSelectOptions();
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/ventas/${venta.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('No se pudo cargar el detalle.');
+      const data = await response.json();
+      setDetalleActual({ ...data, total: parseFloat(data.total) });
+      
+      console.log('Productos disponibles:', productosDisponibles);
+      console.log('Productos vendidos recibidos:', data.productosVendidos);
+      
+      // Asegurarse de que los productos vendidos tengan el color correctamente
+      const productosConColor = (data.productosVendidos || []).map((producto: any) => {
+        console.log('Producto original:', producto);
+        
+        // Si el producto ya tiene color y no es null/undefined/empty, lo dejamos como está
+        if (producto.color && producto.color.trim() !== '') {
+          console.log(`Producto ${producto.id_producto_talla} ya tiene color: ${producto.color}`);
+          return producto;
+        }
+        
+        // Si no tiene color, buscamos el producto en productosDisponibles
+        const productoEncontrado = productosDisponibles.find(p => p.id_producto_talla === producto.id_producto_talla);
+        
+        if (productoEncontrado && productoEncontrado.color) {
+          console.log(`Producto ${producto.id_producto_talla} encontrado con color: ${productoEncontrado.color}`);
+          return {
+            ...producto,
+            color: productoEncontrado.color
+          };
+        } else {
+          console.log(`Producto ${producto.id_producto_talla} no encontrado en productosDisponibles o sin color`);
+          return {
+            ...producto,
+            color: null
+          };
+        }
+      });
+      
+      console.log('Productos con color asignado:', productosConColor);
+      setProductosDetalle(productosConColor);
+    } catch (err) {
+      toast.error(`Error al ver detalle: ${err instanceof Error ? err.message : "Error"}`);
+    } finally {
+      setLoadingDetalle(false);
+    }
   };
 
-  /**
-   * @function abrirModalEditar
-   * @description Abre el modal para editar una venta existente.
-   * Carga los datos de la venta seleccionada en el estado `nuevaVenta`.
-   */
-  const abrirModalEditar = (ventaData: Venta) => {
+  const abrirModalAgregar = () => {
     setNuevaVenta({
-      id: ventaData.id,
-      cliente: ventaData.cliente,
-      fecha: ventaData.fecha.split('T')[0], // Asegura formato YYYY-MM-DD para input type="date"
-      total: ventaData.total,
-      estado: ventaData.estado,
+      fecha: new Date().toISOString().split("T")[0],
+      tipo_pago: "efectivo",
+      id_cliente: null,
+      saldo_a_favor_aplicado: 0,
+      productos: [],
     });
-    setModoEdicion(true);
-    setVentaEditandoId(ventaData.id);
+    setSaldoCliente(0);
     setIsModalOpen(true);
   };
 
-  /**
-   * @function cerrarModal
-   * @description Cierra el modal y reinicia el estado `nuevaVenta`.
-   */
-  const cerrarModal = () => {
-    setIsModalOpen(false);
-    setNuevaVenta({ id: 0, cliente: "", fecha: new Date().toISOString().split('T')[0], total: 0, estado: "Pendiente" });
-    setModoEdicion(false);
-    setVentaEditandoId(null);
+  const cerrarModal = () => setIsModalOpen(false);
+
+  // --- LÓGICA DEL FORMULARIO DE NUEVA VENTA ---
+
+  const handleClienteChange = async (e: SelectChangeEvent<any>) => {
+    const id_cliente = Number(e.target.value);
+    setNuevaVenta(prev => ({ ...prev, id_cliente }));
+
+    if (id_cliente) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/clientes/saldo/${id_cliente}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+          console.log('Error al obtener saldo, usando saldo 0');
+          setSaldoCliente(0);
+          return;
+        }
+        
+        const data = await response.json();
+        console.log('Datos de saldo recibidos:', data);
+        setSaldoCliente(data.saldo_actual || 0);
+      } catch (err) {
+        console.error('Error al obtener saldo:', err);
+        toast.error(`Error al obtener saldo: ${err instanceof Error ? err.message : "Error"}`);
+        setSaldoCliente(0);
+      }
+    } else {
+      setSaldoCliente(0);
+    }
+  };
+  
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>) => {
+    const { name, value } = e.target;
+
+    if (name === "saldo_a_favor_aplicado") {
+        const aplicado = Math.max(0, parseFloat(value) || 0);
+        // Validar que no se aplique más del saldo disponible o del total de la venta
+        const totalVenta = subtotal; // Usamos subtotal antes de aplicar saldo
+        const maxAplicable = Math.min(saldoCliente, totalVenta);
+        console.log('En handleFormChange - aplicado:', aplicado, 'maxAplicable:', maxAplicable);
+        setNuevaVenta(prev => ({ ...prev, [name]: Math.min(aplicado, maxAplicable) }));
+    } else {
+        setNuevaVenta(prev => ({ ...prev, [name]: value }));
+    }
   };
 
-  /**
-   * @function handleChange
-   * @description Maneja los cambios en los inputs del formulario del modal.
-   */
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    const { name, value, type } = e.target;
-    // Si es un input de tipo number, convierte el valor a número, si no es válido, usa 0
-    const val = type === 'number' ? (parseFloat(value) || 0) : value;
-    setNuevaVenta((prev) => ({
+  const handleProductoChange = (index: number, e: React.ChangeEvent<HTMLInputElement> | SelectChangeEvent<any>) => {
+    const { name, value } = e.target;
+    const productos = [...nuevaVenta.productos];
+
+    if (name === "id_producto_talla") {
+      const selected = productosDisponibles.find(p => p.id_producto_talla === Number(value));
+      if (selected) {
+        productos[index] = {
+          ...productos[index],
+          id_producto_talla: selected.id_producto_talla,
+          nombre_producto: selected.nombre,
+          nombre_talla: selected.talla,
+          color: selected.color,
+          precio_unitario: selected.precio_venta,
+          stock_disponible: selected.stock,
+          cantidad: 1,
+        };
+      }
+    } else {
+        const cantidad = Number(value);
+        const stock = productos[index].stock_disponible;
+        // Validar que la cantidad no exceda el stock
+        productos[index] = { ...productos[index], [name]: Math.min(cantidad, stock) };
+    }
+    setNuevaVenta(prev => ({ ...prev, productos }));
+  };
+
+  const agregarProducto = () => {
+    setNuevaVenta(prev => ({
       ...prev,
-      [name]: val,
+      productos: [...prev.productos, {
+        id_producto_talla: 0, nombre_producto: '', nombre_talla: '', color: '',
+        precio_unitario: 0, cantidad: 1, stock_disponible: 0
+      }],
     }));
   };
 
-  /**
-   * @function guardarVenta
-   * @description Guarda (crea o actualiza) una venta en la API.
-   */
+  const eliminarProducto = (index: number) => {
+    setNuevaVenta(prev => ({
+      ...prev,
+      productos: prev.productos.filter((_, i) => i !== index),
+    }));
+  };
+
+  const { subtotal, totalFinal } = useMemo(() => {
+    const sub = nuevaVenta.productos.reduce((acc, p) => acc + (p.precio_unitario * p.cantidad), 0);
+    const final = sub - (nuevaVenta.saldo_a_favor_aplicado || 0);
+    return { subtotal: sub, totalFinal: final };
+  }, [nuevaVenta.productos, nuevaVenta.saldo_a_favor_aplicado]);
+
+  // Actualizar el saldo aplicado cuando cambie el subtotal o el saldo del cliente
+  useEffect(() => {
+    const maxAplicable = Math.min(saldoCliente, subtotal);
+    console.log('Saldo del cliente:', saldoCliente);
+    console.log('Subtotal:', subtotal);
+    console.log('Máximo aplicable:', maxAplicable);
+    console.log('Saldo actual aplicado:', nuevaVenta.saldo_a_favor_aplicado);
+    
+    if (nuevaVenta.saldo_a_favor_aplicado > maxAplicable) {
+      console.log('Ajustando saldo aplicado a:', maxAplicable);
+      setNuevaVenta(prev => ({ ...prev, saldo_a_favor_aplicado: maxAplicable }));
+    }
+  }, [subtotal, saldoCliente, nuevaVenta.saldo_a_favor_aplicado]);
+
+
   const guardarVenta = async () => {
-    if (!nuevaVenta.cliente.trim() || !nuevaVenta.fecha || nuevaVenta.total <= 0) {
-      toast.warn("Por favor, completa todos los campos requeridos (Cliente, Fecha, Total > 0).");
-      return;
-    }
-    if (!isAuthenticated || !token) {
-      toast.error("No estás autorizado para guardar ventas.");
-      return;
-    }
+    if (!nuevaVenta.id_cliente) return toast.warn("Debes seleccionar un cliente.");
+    if (nuevaVenta.productos.length === 0) return toast.warn("Debes agregar al menos un producto.");
+    if (!token) return toast.error("No estás autorizado.");
+    
+    const payload = {
+      fecha: nuevaVenta.fecha,
+      tipo_pago: nuevaVenta.tipo_pago,
+      id_cliente: nuevaVenta.id_cliente,
+      total: subtotal, // El total real de los productos, el backend recalcula
+      saldo_a_favor_aplicado: nuevaVenta.saldo_a_favor_aplicado,
+      productos: nuevaVenta.productos.map(p => ({
+        id_producto_talla: p.id_producto_talla,
+        cantidad: p.cantidad,
+        precio_unitario: p.precio_unitario,
+      })),
+    };
 
     try {
-      let method: string;
-      let url: string;
-      let successMessage: string;
-
-      const payload = {
-        cliente: nuevaVenta.cliente,
-        fecha: nuevaVenta.fecha,
-        total: nuevaVenta.total,
-        estado: nuevaVenta.estado,
-      };
-
-      if (modoEdicion && ventaEditandoId !== null) {
-        method = 'PUT';
-        url = `${API_BASE_URL}/ventas/${ventaEditandoId}`;
-        successMessage = "Venta actualizada correctamente.";
-      } else {
-        method = 'POST';
-        url = `${API_BASE_URL}/ventas`;
-        successMessage = "Venta registrada correctamente.";
-      }
-
-      const response = await fetch(url, {
-        method: method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
+      const response = await fetch(`${API_BASE_URL}/ventas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: `Error HTTP: ${response.status}` }));
-        throw new Error(errorData.error || `Error al guardar venta: ${response.status}`);
-      }
-
+      const resData = await response.json();
+      if (!response.ok) throw new Error(resData.error || 'Error al guardar la venta.');
+      
+      toast.success(`Venta #${resData.id_venta} creada correctamente.`);
       await fetchVentas();
-      toast.success(successMessage);
       cerrarModal();
+
     } catch (err) {
-      toast.error(`Error al guardar la venta: ${err instanceof Error ? err.message : "Error desconocido"}`);
+      toast.error(`Error al guardar: ${err instanceof Error ? err.message : "Error"}`);
     }
   };
 
-  /**
-   * @function solicitarConfirmacionEliminacion
-   * @description Abre el diálogo de confirmación antes de eliminar una venta.
-   */
-  const solicitarConfirmacionEliminacion = (venta: Venta) => {
-    setVentaAEliminar(venta);
+  // --- LÓGICA DE ANULACIÓN ---
+  
+  const solicitarConfirmacionAnulacion = (venta: Venta) => {
+    setVentaAAnular(venta);
     setConfirmDialogOpen(true);
   };
 
-  /**
-   * @function confirmarEliminacion
-   * @description Confirma y elimina una venta de la API.
-   */
-  const confirmarEliminacion = async () => {
-    if (!isAuthenticated || !token) {
-      toast.error("No estás autorizado para eliminar ventas.");
+  const confirmarAnulacion = async () => {
+    if (!token || !ventaAAnular) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/ventas/${ventaAAnular.id}/anular`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Error al anular la venta.');
+      toast.success("Venta anulada y stock restaurado.");
+      await fetchVentas();
+    } catch (err) {
+      toast.error(`Error al anular: ${err instanceof Error ? err.message : "Error"}`);
+    } finally {
       setConfirmDialogOpen(false);
-      return;
-    }
-
-    if (ventaAEliminar) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/ventas/${ventaAEliminar.id}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ message: `Error HTTP: ${response.status}` }));
-          throw new Error(errorData.error || `Error al eliminar venta: ${response.status}`);
-        }
-
-        await fetchVentas();
-        toast.success("Venta eliminada correctamente.");
-      } catch (err) {
-        toast.error(`Error al eliminar la venta: ${err instanceof Error ? err.message : "Error desconocido"}`);
-      } finally {
-        setConfirmDialogOpen(false);
-        setVentaAEliminar(null);
-      }
+      setVentaAAnular(null);
     }
   };
 
-  // --- Component Rendering ---
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-48">
-        <p className="text-gray-600 dark:text-gray-300">Cargando ventas...</p>
-      </div>
-    );
-  }
+  // --- GENERACIÓN DE PDF ---
 
-  if (error) {
-    return (
-      <div className="flex justify-center items-center h-48">
-        <p className="text-red-600 dark:text-red-400">Error: {error}</p>
-      </div>
-    );
-  }
+  const generarPDF = async (venta: Venta) => {
+    toast.info("Generando PDF...", { autoClose: 1500 });
+    if (!token) return;
 
-  if (!Array.isArray(ventas)) {
-    return (
-      <div className="flex justify-center items-center h-48">
-        <p className="text-red-600 dark:text-red-400">
-          Error interno: Los datos de ventas no son válidos. Por favor, contacta a soporte.
-        </p>
-      </div>
-    );
-  }
+    try {
+      const response = await fetch(`${API_BASE_URL}/ventas/${venta.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('No se pudo obtener el detalle para el PDF.');
+      const detalleVenta = await response.json();
+
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      // === ENCABEZADO CON DISEÑO PROFESIONAL ===
+      // Fondo del encabezado con gradiente simulado
+      doc.setFillColor(59, 130, 246); // Azul moderno (blue-500)
+      doc.rect(0, 0, pageWidth, 35, 'F');
+      
+      // Segundo tono para simular gradiente
+      doc.setFillColor(37, 99, 235); // Azul más oscuro (blue-600)
+      doc.rect(0, 0, pageWidth, 8, 'F');
+      
+      // Logo/Texto de la empresa
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.text('ConchaSoft', 20, 20);
+      
+      // Subtítulo
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Sistema de Gestión Comercial', 20, 28);
+      
+      // Fecha de generación
+      doc.setFontSize(10);
+      doc.text(`Generado: ${new Date().toLocaleString('es-CO')}`, pageWidth - 60, 20);
+      
+      // === TÍTULO DEL DOCUMENTO ===
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('FACTURA DE VENTA', pageWidth / 2, 55, { align: 'center' });
+      
+      // Línea decorativa con colores modernos
+      doc.setDrawColor(59, 130, 246); // Azul moderno
+      doc.setLineWidth(3);
+      doc.line(20, 60, pageWidth - 20, 60);
+      
+      // Línea secundaria más sutil
+      doc.setDrawColor(147, 197, 253); // Azul claro
+      doc.setLineWidth(1);
+      doc.line(20, 63, pageWidth - 20, 63);
+      
+      // === INFORMACIÓN DE LA VENTA ===
+      let yPosition = 75;
+      
+      // Información principal en dos columnas
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('INFORMACIÓN DE LA VENTA', 20, yPosition);
+      yPosition += 8;
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+
+      const cliente = clientesDisponibles.find(c => c.id === detalleVenta.id_cliente);
+      const nombreCliente = cliente ? `${cliente.nombre} ${cliente.apellido}` : `ID: ${detalleVenta.id_cliente}`;
+
+      // Columna izquierda
+      doc.text(`Número de Venta: #${detalleVenta.id}`, 20, yPosition);
+      doc.text(`Fecha: ${new Date(detalleVenta.fecha).toLocaleDateString('es-CO', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      })}`, 20, yPosition + 6);
+      doc.text(`Tipo de Pago: ${detalleVenta.tipo_pago}`, 20, yPosition + 12);
+      
+      // Columna derecha
+      doc.text(`Cliente: ${nombreCliente}`, pageWidth / 2, yPosition);
+      
+      // Estado con color (sin sobreescribir)
+      doc.setFont('helvetica', 'bold');
+      if (detalleVenta.estado === 'Completado') {
+        doc.setTextColor(34, 197, 94); // Verde esmeralda
+      } else if (detalleVenta.estado === 'Anulado') {
+        doc.setTextColor(239, 68, 68); // Rojo coral
+      } else {
+        doc.setTextColor(234, 179, 8); // Amarillo
+      }
+      doc.text(`Estado: ${detalleVenta.estado}`, pageWidth / 2, yPosition + 6);
+      
+      // Restaurar color negro para el resto del texto
+      doc.setTextColor(0, 0, 0);
+      
+      yPosition += 25;
+      
+      // === TABLA DE PRODUCTOS ===
+      const productosParaPdf = detalleVenta.productosVendidos || [];
+      if (productosParaPdf.length > 0) {
+        // Calcular totales
+        const subtotal = parseFloat(detalleVenta.total);
+        const saldoUsado = parseFloat(detalleVenta.monto_saldo_usado || 0);
+        const totalFinal = subtotal - saldoUsado;
+        
+        // Encabezado de la tabla
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('DETALLE DE PRODUCTOS', 20, yPosition);
+        yPosition += 8;
+      
+              autoTable(doc, {
+          startY: yPosition,
+          head: [["Producto", "Talla", "Color", "Cant.", "P. Unitario", "Subtotal"]],
+          headStyles: {
+            fillColor: [59, 130, 246], // Azul moderno
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          body: productosParaPdf.map((p: any) => {
+            // Buscar el color en productosDisponibles si no existe
+            let colorMostrar = 'Sin color';
+            if (p.color && p.color.trim() !== '') {
+              colorMostrar = p.color;
+            } else {
+              // Intentar encontrar el color en productosDisponibles
+              const productoEncontrado = productosDisponibles.find(prod => prod.id_producto_talla === p.id_producto_talla);
+              if (productoEncontrado?.color && productoEncontrado.color.trim() !== '') {
+                colorMostrar = productoEncontrado.color;
+              }
+            }
+            
+            return [
+              p.nombre_producto,
+              p.nombre_talla,
+              colorMostrar,
+              p.cantidad.toString(),
+              new Intl.NumberFormat('es-CO', { 
+                style: 'currency', 
+                currency: 'COP', 
+                maximumFractionDigits: 0 
+              }).format(parseFloat(p.precio_unitario)),
+              new Intl.NumberFormat('es-CO', { 
+                style: 'currency', 
+                currency: 'COP', 
+                maximumFractionDigits: 0 
+              }).format(parseFloat(p.subtotal))
+            ];
+          }),
+          styles: {
+            fontSize: 9,
+            cellPadding: 4
+          },
+          alternateRowStyles: {
+            fillColor: [248, 250, 252] // Gris muy claro moderno
+          },
+          margin: { left: 20, right: 20 }
+        });
+        
+        // === RESUMEN FINANCIERO ===
+        const finalY = (doc as any).lastAutoTable.finalY || yPosition + 50;
+        yPosition = finalY + 15;
+        
+        // Fondo para el resumen
+        doc.setFillColor(249, 250, 251); // Gris muy claro
+        doc.rect(20, yPosition - 5, pageWidth - 40, 50, 'F');
+        
+        // Borde superior con color
+        doc.setDrawColor(59, 130, 246); // Azul moderno
+        doc.setLineWidth(2);
+        doc.line(20, yPosition - 5, pageWidth - 20, yPosition - 5);
+        
+        // Bordes del resumen
+        doc.setDrawColor(209, 213, 219); // Gris suave
+        doc.setLineWidth(0.5);
+        doc.rect(20, yPosition - 5, pageWidth - 40, 50);
+        
+        // Texto del resumen
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('RESUMEN FINANCIERO', 25, yPosition + 5);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.text(`Subtotal:`, pageWidth - 80, yPosition + 5);
+        doc.text(new Intl.NumberFormat('es-CO', { 
+          style: 'currency', 
+          currency: 'COP', 
+          maximumFractionDigits: 0 
+        }).format(subtotal), pageWidth - 25, yPosition + 5, { align: 'right' });
+        
+        if (saldoUsado > 0) {
+          doc.text(`Saldo Usado:`, pageWidth - 80, yPosition + 12);
+          doc.text(`-${new Intl.NumberFormat('es-CO', { 
+            style: 'currency', 
+            currency: 'COP', 
+            maximumFractionDigits: 0 
+          }).format(saldoUsado)}`, pageWidth - 25, yPosition + 12, { align: 'right' });
+        }
+        
+        // Línea separadora
+        doc.setDrawColor(100, 100, 100);
+        doc.setLineWidth(1);
+        doc.line(pageWidth - 80, yPosition + 20, pageWidth - 25, yPosition + 20);
+        
+        // Total
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text(`TOTAL A PAGAR:`, pageWidth - 80, yPosition + 30);
+        doc.text(new Intl.NumberFormat('es-CO', { 
+          style: 'currency', 
+          currency: 'COP', 
+          maximumFractionDigits: 0 
+        }).format(totalFinal), pageWidth - 25, yPosition + 30, { align: 'right' });
+        
+        yPosition += 60;
+      }
+      
+      // === PIE DE PÁGINA ===
+      const footerY = pageHeight - 30;
+      
+      // Línea superior del pie con color moderno
+      doc.setDrawColor(59, 130, 246); // Azul moderno
+      doc.setLineWidth(1);
+      doc.line(20, footerY, pageWidth - 20, footerY);
+      
+      // Información del pie
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      doc.text('Este documento fue generado automáticamente por ConchaSoft', 20, footerY + 8);
+      doc.text(`Página 1 de 1`, pageWidth - 30, footerY + 8, { align: 'right' });
+      
+      // Información de contacto
+      doc.text('Sistema de Gestión Comercial - ConchaSoft', 20, footerY + 16);
+      doc.text('www.conchasoft.com', pageWidth - 30, footerY + 16, { align: 'right' });
+      
+      // === GUARDAR EL PDF ===
+      const fileName = `venta-${detalleVenta.id}-${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+      
+      toast.success("PDF generado exitosamente");
+    } catch (err) {
+      toast.error(`Error al generar PDF: ${err instanceof Error ? err.message : "Error"}`);
+    }
+  };
+
+  // --- RENDERIZADO DEL COMPONENTE ---
+
+  const getEstadoColor = (estado: Venta['estado']) => {
+    switch (estado) {
+        case 'Completado': return 'bg-green-200 text-green-800';
+        case 'Anulado': return 'bg-red-200 text-red-800';
+        case 'Devuelto Parcialmente': return 'bg-yellow-200 text-yellow-800';
+        case 'Devuelto Totalmente': return 'bg-orange-200 text-orange-800';
+        default: return 'bg-gray-200 text-gray-800';
+    }
+  };
+
+  if (loading && allVentas.length === 0) return <div className="p-4 text-center">Cargando ventas...</div>;
+  if (error) return <div className="p-4 text-center text-red-500">{error}</div>;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-400 bg-gray-200 dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="p-4 flex flex-col sm:flex-row items-center justify-end flex-wrap gap-4">
-        <div className="mr-auto">
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<AddIcon />}
-            onClick={abrirModal}
-            sx={{ textTransform: 'none' }}
-          >
-            Registrar Nueva Venta
-          </Button>
-        </div>
-
+    <div className="overflow-hidden rounded-xl border border-gray-400 bg-gray-200">
+      <div className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={abrirModalAgregar}>
+          Agregar Venta
+        </Button>
         <div className="flex items-center gap-4 w-full sm:w-auto">
           <input
             type="text"
-            placeholder="Buscar venta por cliente, estado..."
+            placeholder="Buscar por ID, cliente, estado..."
             value={searchTerm}
             onChange={handleChangeSearch}
-            className="border border-gray-400 bg-white rounded px-4 py-2 flex-grow focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-gray-800 dark:text-white dark:border-gray-600"
+            className="border border-gray-400 bg-white rounded px-4 py-2 w-full"
           />
-
           <FormControl sx={{ minWidth: 120 }} size="small">
-            <InputLabel id="items-per-page-label">Elementos</InputLabel>
-            <Select
-              labelId="items-per-page-label"
-              id="items-per-page-select"
-              value={itemsPerPage}
-              label="Elementos"
-              onChange={handleItemsPerPageChange}
-              sx={{
-                color: 'black',
-                '.MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'gray',
-                },
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'var(--brand-500)',
-                },
-                '.MuiSvgIcon-root': {
-                  color: 'black',
-                },
-                '.MuiInputLabel-root': {
-                  color: 'black',
-                },
-                '.MuiInputLabel-root.Mui-focused': {
-                  color: 'var(--brand-500)',
-                },
-              }}
-            >
-              <MenuItem value={5}>5</MenuItem>
+            <InputLabel>Items/pág</InputLabel>
+            <Select value={itemsPerPage} label="Items/pág" onChange={handleItemsPerPageChange}>
               <MenuItem value={10}>10</MenuItem>
               <MenuItem value={20}>20</MenuItem>
               <MenuItem value={50}>50</MenuItem>
@@ -436,256 +850,147 @@ export default function VentasTable() {
 
       <div className="max-w-full overflow-x-auto">
         <Table>
-          <TableHeader className="border-b border-gray-400 dark:border-white/[0.05]">
+          <TableHeader className="border-b border-gray-400">
             <TableRow>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
-                ID Venta
-              </TableCell>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
-                Cliente
-              </TableCell>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
-                Fecha
-              </TableCell>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
-                Total
-              </TableCell>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
-                Estado
-              </TableCell>
-              <TableCell isHeader className="text-theme-xs text-black dark:text-gray-100 px-5 py-3 text-start">
-                Acciones
-              </TableCell>
+              <TableCell isHeader>ID</TableCell>
+              <TableCell isHeader>Documento</TableCell>
+              <TableCell isHeader>Cliente</TableCell>
+              <TableCell isHeader>Fecha</TableCell>
+              <TableCell isHeader>Total</TableCell>
+              <TableCell isHeader>Estado</TableCell>
+              <TableCell isHeader>Acciones</TableCell>
             </TableRow>
           </TableHeader>
-          <TableBody className="divide-y divide-gray-400 dark:divide-white/[0.05]">
-            {ventas.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-4 text-gray-600 dark:text-gray-400">
-                  No hay ventas disponibles.
+          <TableBody className="divide-y divide-gray-400">
+            {currentTableData.map((venta) => (
+              <TableRow key={venta.id}>
+                <TableCell className="font-medium">#{venta.id}</TableCell>
+                <TableCell>{venta.documento}</TableCell>
+                <TableCell>{`${venta.nombre} ${venta.apellido}`}</TableCell>
+                <TableCell>{new Date(venta.fecha).toLocaleDateString('es-CO')}</TableCell>
+                <TableCell>${venta.total.toLocaleString('es-CO')}</TableCell>
+                <TableCell>
+                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getEstadoColor(venta.estado)}`}>
+                    {venta.estado}
+                  </span>
+                </TableCell>
+                <TableCell className="space-x-1">
+                  <Tooltip title="Ver Detalle"><IconButton color="secondary" onClick={() => abrirDetalle(venta)}><VisibilityIcon /></IconButton></Tooltip>
+                  <Tooltip title="Descargar PDF"><IconButton color="default" onClick={() => generarPDF(venta)}><PictureAsPdfIcon /></IconButton></Tooltip>
+                  <Tooltip title="Anular Venta">
+                    <span>
+                      <IconButton color="error" onClick={() => solicitarConfirmacionAnulacion(venta)} disabled={venta.estado === 'Anulado'}>
+                        <CancelIcon />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
                 </TableCell>
               </TableRow>
-            ) : (
-              ventas.map((venta) => (
-                <TableRow key={venta.id}>
-                  <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">
-                    {venta.id}
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">
-                    {venta.cliente}
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">
-                    {new Date(venta.fecha).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">
-                    ${venta.total.toFixed(2)}
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-gray-900 text-theme-sm dark:text-gray-100">
-                    {venta.estado}
-                  </TableCell>
-                  <TableCell className="px-5 py-4 space-x-2">
-                    <Tooltip title="Ver Detalles">
-                      <IconButton
-                        color="info"
-                        onClick={() => navigate(`/ventas/${venta.id}`)}
-                      >
-                        <VisibilityIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Editar">
-                      <IconButton
-                        color="primary"
-                        onClick={() => abrirModalEditar(venta)}
-                      >
-                        <EditIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Eliminar">
-                      <IconButton
-                        color="error"
-                        onClick={() => solicitarConfirmacionEliminacion(venta)}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
+            ))}
           </TableBody>
         </Table>
       </div>
 
-      {(totalPages > 1 || totalItems > 0) && (
-        <div className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-4">
-            {totalItems > 0 && (
-              <p className="text-sm text-gray-700 dark:text-gray-300">
-                Mostrando {ventas.length} de {totalItems} ventas
-              </p>
-            )}
-          </div>
+      <div className="p-4 flex justify-between items-center">
+        <p className="text-sm">Mostrando {currentTableData.length} de {totalItems} ventas</p>
+        {totalPages > 1 && <Pagination count={totalPages} page={currentPage} onChange={handlePageChange} color="primary" />}
+      </div>
 
-          {totalPages > 1 && (
-            <Pagination
-              count={totalPages}
-              page={currentPage}
-              onChange={handlePageChange}
-              color="primary"
-              showFirstButton
-              showLastButton
-              sx={{
-                '& .MuiPaginationItem-root': {
-                  color: 'black',
-                  '&.Mui-selected': {
-                    backgroundColor: 'var(--brand-500)',
-                    color: 'white',
-                    '&:hover': {
-                      backgroundColor: 'var(--brand-600)',
-                    },
-                  },
-                  '&:hover': {
-                    backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                  },
-                },
-                '.MuiPaginationItem-ellipsis': {
-                  color: 'black',
-                },
-                '.MuiSvgIcon-root': {
-                  color: 'black',
-                },
-                '.MuiButtonBase-root.Mui-disabled': {
-                  opacity: 0.5,
-                  pointerEvents: 'none',
-                },
-              }}
-            />
+      {/* MODAL DETALLE DE VENTA */}
+      <Modal isOpen={modalDetalleOpen} handleClose={() => setModalDetalleOpen(false)}>
+         <h2 className="text-2xl font-bold mb-6">Detalle de Venta #{detalleActual?.id}</h2>
+         {loadingDetalle ? <p>Cargando...</p> : (
+            <>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                    <div><strong>ID:</strong> #{detalleActual?.id}</div>
+                    <div><strong>Fecha:</strong> {new Date(detalleActual?.fecha || '').toLocaleDateString('es-CO')}</div>
+                    <div><strong>Estado:</strong> {detalleActual?.estado}</div>
+                    <div><strong>Tipo Pago:</strong> {detalleActual?.tipo_pago}</div>
+                    <div className="col-span-2"><strong>Cliente:</strong> {`${detalleActual?.nombre || ''} ${detalleActual?.apellido || ''}`}</div>
+                    <div className="font-bold"><strong>Subtotal:</strong> ${detalleActual?.total?.toLocaleString('es-CO')}</div>
+                    <div className="font-bold"><strong>Saldo Usado:</strong> -${(detalleActual?.monto_saldo_usado || 0).toLocaleString('es-CO')}</div>
+                    <div className="font-bold text-lg"><strong>Total Pagado:</strong> ${( (detalleActual?.total || 0) - (detalleActual?.monto_saldo_usado || 0) ).toLocaleString('es-CO')}</div>
+                </div>
+                <h3 className="text-xl font-bold mt-8 mb-4">Productos Vendidos</h3>
+                <div className="overflow-x-auto border rounded-lg">
+                    <Table>
+                        <TableHeader><TableRow><TableCell isHeader>Producto</TableCell><TableCell isHeader>Talla</TableCell><TableCell isHeader>Color</TableCell><TableCell isHeader>Cant.</TableCell><TableCell isHeader>P. Unitario</TableCell><TableCell isHeader>Subtotal</TableCell></TableRow></TableHeader>
+                        <TableBody>{productosDetalle.map((p) => (<TableRow key={p.id_producto_talla}><TableCell>{p.nombre_producto}</TableCell><TableCell>{p.nombre_talla}</TableCell><TableCell>
+  {p.color && p.color.trim() !== '' ? 
+    <div className="flex items-center gap-2">
+      <div className="w-4 h-4 rounded border" style={{backgroundColor: p.color}}></div>
+      <span>{p.color}</span>
+    </div> : 'Sin color'}
+</TableCell><TableCell>{p.cantidad}</TableCell><TableCell>${p.precio_unitario.toLocaleString('es-CO')}</TableCell><TableCell>${p.subtotal.toLocaleString('es-CO')}</TableCell></TableRow>))}</TableBody>
+                    </Table>
+                </div>
+            </>
+         )}
+      </Modal>
+
+      {/* MODAL AGREGAR VENTA */}
+      <Dialog open={isModalOpen} onClose={cerrarModal} maxWidth="md" fullWidth>
+        <DialogTitle>Agregar Nueva Venta</DialogTitle>
+        <DialogContent dividers>
+          {loadingSelects ? <p>Cargando...</p> : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormControl fullWidth><InputLabel>Tipo de Pago</InputLabel><Select name="tipo_pago" value={nuevaVenta.tipo_pago} label="Tipo de Pago" onChange={handleFormChange}><MenuItem value="efectivo">Efectivo</MenuItem><MenuItem value="tarjeta">Tarjeta</MenuItem><MenuItem value="transferencia">Transferencia</MenuItem><MenuItem value="cheque">Cheque</MenuItem><MenuItem value="saldo_a_favor">Saldo a Favor</MenuItem></Select></FormControl>
+                <FormControl fullWidth><InputLabel>Cliente</InputLabel><Select name="id_cliente" value={nuevaVenta.id_cliente || ''} label="Cliente" onChange={handleClienteChange}><MenuItem value=""><em>Seleccionar</em></MenuItem>{clientesDisponibles.map((c) => (<MenuItem key={c.id} value={c.id}>{`${c.nombre} ${c.apellido} - ${c.documento}`}</MenuItem>))}</Select></FormControl>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="font-semibold">Productos</h3>
+                {nuevaVenta.productos.map((prod, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-2 items-center p-2 border rounded-lg">
+                    <div className="col-span-12 sm:col-span-5"><FormControl fullWidth size="small"><InputLabel>Producto / Talla / Color (Stock)</InputLabel><Select name="id_producto_talla" value={prod.id_producto_talla || ''} label="Producto / Talla / Color (Stock)" onChange={(e) => handleProductoChange(i, e)}>{productosDisponibles.map((p) => (<MenuItem key={p.id_producto_talla} value={p.id_producto_talla}><div className="flex items-center gap-2"><div className="w-4 h-4 rounded border" style={{backgroundColor: p.color}}></div><span>{`${p.nombre} - ${p.talla} - ${p.color} (Stock: ${p.stock})`}</span></div></MenuItem>))}</Select></FormControl></div>
+                    <div className="col-span-4 sm:col-span-2"><TextField label="Precio" type="number" name="precio_unitario" value={prod.precio_unitario} size="small" fullWidth InputProps={{ readOnly: true }} /></div>
+                    <div className="col-span-4 sm:col-span-2"><TextField label="Cantidad" type="number" name="cantidad" value={prod.cantidad} onChange={(e) => handleProductoChange(i, e)} size="small" fullWidth InputProps={{ inputProps: { max: prod.stock_disponible, min: 1 } }} /></div>
+                    <div className="col-span-4 sm:col-span-2"><TextField label="Subtotal" value={`$${(prod.precio_unitario * prod.cantidad).toLocaleString('es-CO')}`} size="small" fullWidth InputProps={{ readOnly: true }} /></div>
+                    <div className="col-span-12 sm:col-span-1 text-right"><IconButton onClick={() => eliminarProducto(i)} color="error"><DeleteIcon /></IconButton></div>
+                  </div>
+                ))}
+                <Button variant="outlined" startIcon={<AddIcon />} onClick={agregarProducto}>Agregar Producto</Button>
+              </div>
+
+              <div className="mt-4 pt-4 border-t grid grid-cols-2 gap-4">
+                  <div>
+                      <p className="font-bold">Saldo disponible del cliente:</p>
+                      <p className="text-lg text-green-600">${saldoCliente.toLocaleString('es-CO')}</p>
+                  </div>
+                  <TextField
+                        label="Usar saldo a favor"
+                        type="number"
+                        name="saldo_a_favor_aplicado"
+                        value={nuevaVenta.saldo_a_favor_aplicado}
+                        onChange={handleFormChange}
+                        InputProps={{
+                            startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                            inputProps: { max: Math.min(saldoCliente, subtotal), min: 0 }
+                        }}
+                        helperText={`Máximo aplicable: $${Math.min(saldoCliente, subtotal).toLocaleString('es-CO')}`}
+                    />
+              </div>
+
+              <div className="mt-4 text-right">
+                <p>Subtotal: ${subtotal.toLocaleString('es-CO')}</p>
+                <p>Descuento por saldo: -${(nuevaVenta.saldo_a_favor_aplicado || 0).toLocaleString('es-CO')}</p>
+                <p className="font-bold text-lg">Total a Pagar: ${totalFinal.toLocaleString('es-CO')}</p>
+              </div>
+            </div>
           )}
-        </div>
-      )}
-
-      {/* Modal para Agregar/Editar Venta */}
-      <Dialog open={isModalOpen} onClose={cerrarModal} maxWidth="sm" fullWidth>
-        <DialogTitle className="text-xl font-semibold text-gray-900 dark:text-white">
-          {modoEdicion ? "Editar Venta" : "Registrar Nueva Venta"}
-        </DialogTitle>
-
-        <DialogContent className="pt-2 space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Cliente <span className="text-error-500">*</span>
-            </label>
-            <input
-              name="cliente"
-              type="text"
-              value={nuevaVenta.cliente}
-              onChange={handleChange}
-              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Fecha <span className="text-error-500">*</span>
-            </label>
-            <input
-              name="fecha"
-              type="date"
-              value={nuevaVenta.fecha}
-              onChange={handleChange}
-              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Total <span className="text-error-500">*</span>
-            </label>
-            <input
-              name="total"
-              type="number"
-              step="0.01" // Permite decimales
-              value={nuevaVenta.total}
-              onChange={handleChange}
-              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Estado <span className="text-error-500">*</span>
-            </label>
-            <select
-              name="estado"
-              value={nuevaVenta.estado}
-              onChange={handleChange}
-              className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-            >
-              <option value="Pendiente">Pendiente</option>
-              <option value="Completada">Completada</option>
-              <option value="Cancelada">Cancelada</option>
-            </select>
-          </div>
         </DialogContent>
-
-        <DialogActions className="flex justify-end gap-3 px-6 pb-4">
-          <button
-            onClick={cerrarModal}
-            className="px-5 py-2 rounded-full bg-gray-400 text-white hover:bg-gray-500 transition dark:bg-gray-600"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={guardarVenta}
-            className="px-5 py-2 rounded-full bg-brand-500 text-white hover:bg-brand-600 transition"
-          >
-            {modoEdicion ? "Actualizar" : "Guardar"}
-          </button>
+        <DialogActions>
+          <Button onClick={cerrarModal}>Cancelar</Button>
+          <Button onClick={guardarVenta} variant="contained">Guardar Venta</Button>
         </DialogActions>
       </Dialog>
-
-      {/* Diálogo de Confirmación de Eliminación */}
-      <Dialog
-        open={confirmDialogOpen}
-        onClose={() => setConfirmDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle className="bg-red-500 text-white font-bold text-xl">
-          <div className="flex items-center">
-            <DeleteIcon className="mr-2" />
-            Confirmar eliminación
-          </div>
-        </DialogTitle>
-        <DialogContent className="bg-gray-100">
-          <DialogContentText className="text-lg text-gray-700">
-            ¿Estás seguro de que deseas eliminar la venta del cliente{' '}
-            <strong className="font-semibold text-red-600">{ventaAEliminar?.cliente}</strong>
-            {' '}con ID <strong className="font-semibold text-red-600">{ventaAEliminar?.id}</strong>? Esta acción no se puede deshacer.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions className="bg-gray-50 p-4">
-          <Tooltip title="Cancelar">
-            <IconButton
-              onClick={() => setConfirmDialogOpen(false)}
-              color="default"
-              className="hover:bg-gray-200 rounded-full"
-            >
-              <CancelIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Eliminar">
-            <Button
-              onClick={confirmarEliminacion}
-              color="error"
-              variant="contained"
-              startIcon={<DeleteIcon />}
-              className="capitalize font-medium hover:bg-red-600"
-            >
-              Eliminar
-            </Button>
-          </Tooltip>
-        </DialogActions>
+      
+      {/* DIÁLOGO CONFIRMACIÓN ANULAR */}
+      <Dialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)}>
+        <DialogTitle>Confirmar Anulación</DialogTitle>
+        <DialogContent><DialogContentText>¿Estás seguro de anular la venta <strong>#{ventaAAnular?.id}</strong>? Esta acción revertirá el stock y el saldo usado.</DialogContentText></DialogContent>
+        <DialogActions><Button onClick={() => setConfirmDialogOpen(false)}>Cancelar</Button><Button onClick={confirmarAnulacion} color="error">Anular</Button></DialogActions>
       </Dialog>
     </div>
   );

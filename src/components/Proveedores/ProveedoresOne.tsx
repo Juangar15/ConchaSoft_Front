@@ -104,6 +104,9 @@ export default function ProveedoresTable() {
     const [loadingDepartamentos, setLoadingDepartamentos] = useState(false);
     const [loadingMunicipios, setLoadingMunicipios] = useState(false);
 
+    // Estado para la validación del correo electrónico
+    const [emailError, setEmailError] = useState<string | null>(null);
+
     // --- LÓGICA DE DATOS ---
     const fetchProveedores = useCallback(async () => {
         if (!token) return;
@@ -193,6 +196,14 @@ export default function ProveedoresTable() {
     }, [allProveedores, searchTerm, currentPage, itemsPerPage]);
 
     // --- MANEJADORES DE EVENTOS Y ACCIONES CRUD ---
+
+    // Email validation function
+    const validateEmail = (email: string): boolean => {
+        // Regex for email validation (basic, allows common domains)
+        const emailRegex = /^[^\s@]+@[^\s@]+\.(com|co|org|net|gov|edu|info|biz|io|xyz)$/i;
+        return emailRegex.test(email);
+    };
+
     const handleAction = async (action: () => Promise<any>, successMessage: string, errorMessage: string) => {
         if (!token) return toast.error("No autenticado.");
         try {
@@ -206,6 +217,14 @@ export default function ProveedoresTable() {
     };
 
     const guardarProveedor = () => {
+        // Validate email before saving
+        if (!validateEmail(nuevoProveedor.correo)) {
+            setEmailError("El correo electrónico no es válido. Debe contener '@' y un dominio válido (ej: .com, .co).");
+            return;
+        } else {
+            setEmailError(null);
+        }
+
         const isEditing = modoEdicion && proveedorEditandoId !== null;
         const apiCall = async () => {
             const url = isEditing ? `${API_BASE_URL}/${proveedorEditandoId}` : API_BASE_URL;
@@ -217,8 +236,8 @@ export default function ProveedoresTable() {
                 body: JSON.stringify(payload)
             });
             if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}));
-              throw new Error(errorData.error || `Error ${response.status}`);
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Error ${response.status}`);
             }
         };
         handleAction(
@@ -235,9 +254,9 @@ export default function ProveedoresTable() {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-             if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}));
-              throw new Error(errorData.error || `Error ${response.status}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Error ${response.status}`);
             }
         };
         handleAction(apiCall, "Proveedor eliminado.", "Error al eliminar.")
@@ -254,9 +273,9 @@ export default function ProveedoresTable() {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ estado: proveedor.estado === 1 ? 0 : 1 })
             });
-             if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}));
-              throw new Error(errorData.error || `Error ${response.status}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Error ${response.status}`);
             }
         };
         handleAction(apiCall, "Estado actualizado.", "Error al cambiar estado.");
@@ -282,6 +301,7 @@ export default function ProveedoresTable() {
         });
         setSelectedDepartmentId(null);
         setMunicipios([]);
+        setEmailError(null); // Clear email error when opening for add
         setIsModalOpen(true);
     };
 
@@ -308,14 +328,15 @@ export default function ProveedoresTable() {
         } else {
             setSelectedDepartmentId(null);
         }
+        setEmailError(null); // Clear email error when opening for edit
         setIsModalOpen(true);
     };
-    
+
     const cerrarModal = () => setIsModalOpen(false);
-    
+
     const verDetalle = (proveedor: Proveedor) => {
-      setDetalleActual(proveedor);
-      setModalDetalleOpen(true);
+        setDetalleActual(proveedor);
+        setModalDetalleOpen(true);
     };
 
     const cerrarDetalle = () => setModalDetalleOpen(false);
@@ -334,6 +355,14 @@ export default function ProveedoresTable() {
                 updated.nombre_contacto = null;
                 updated.tipo_documento = value === 'empresa' ? 'NIT' : 'CC';
             }
+            // Validate email on change
+            if (name === 'correo') {
+                if (!validateEmail(value) && value !== "") { // Only show error if not empty and invalid
+                    setEmailError("El correo electrónico no es válido. Debe contener '@' y un dominio válido (ej: .com, .co).");
+                } else {
+                    setEmailError(null);
+                }
+            }
             return updated;
         });
     };
@@ -348,7 +377,7 @@ export default function ProveedoresTable() {
             setNuevoProveedor(prev => ({ ...prev, [name]: value }));
         }
     };
-    
+
     const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
     const handleChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSearchTerm(e.target.value);
@@ -358,7 +387,7 @@ export default function ProveedoresTable() {
         setItemsPerPage(Number(event.target.value));
         setCurrentPage(1);
     };
-    
+
     if (loading && allProveedores.length === 0) return <div className="p-4 text-center">Cargando proveedores...</div>;
     if (error) return <div className="p-4 text-center text-red-500">Error: {error}</div>;
 
@@ -417,9 +446,33 @@ export default function ProveedoresTable() {
                                         </span>
                                     </td>
                                     <td className="px-5 py-4 whitespace-nowrap space-x-1">
-                                        <Tooltip title="Ver Detalle"><IconButton color="secondary" onClick={() => verDetalle(proveedor)}><VisibilityIcon /></IconButton></Tooltip>
-                                        <Tooltip title="Editar"><IconButton color="primary" onClick={() => abrirModalEditar(proveedor)}><EditIcon /></IconButton></Tooltip>
-                                        <Tooltip title="Eliminar"><IconButton color="error" onClick={() => solicitarConfirmacionEliminacion(proveedor)}><DeleteIcon /></IconButton></Tooltip>
+                                        <Tooltip title="Ver Detalle">
+                                            <IconButton color="secondary" onClick={() => verDetalle(proveedor)}>
+                                                <VisibilityIcon />
+                                            </IconButton>
+                                        </Tooltip>
+                                        <Tooltip title="Editar">
+                                            <span> {/* Wrap to allow disabled Tooltip */}
+                                                <IconButton
+                                                    color="primary"
+                                                    onClick={() => abrirModalEditar(proveedor)}
+                                                    disabled={proveedor.estado === 0} // Disable if inactive
+                                                >
+                                                    <EditIcon />
+                                                </IconButton>
+                                            </span>
+                                        </Tooltip>
+                                        <Tooltip title="Eliminar">
+                                            <span> {/* Wrap to allow disabled Tooltip */}
+                                                <IconButton
+                                                    color="error"
+                                                    onClick={() => solicitarConfirmacionEliminacion(proveedor)}
+                                                    disabled={proveedor.estado === 0} // Disable if inactive
+                                                >
+                                                    <DeleteIcon />
+                                                </IconButton>
+                                            </span>
+                                        </Tooltip>
                                     </td>
                                 </tr>
                             ))
@@ -454,16 +507,25 @@ export default function ProveedoresTable() {
                         <FormControl fullWidth>
                             <InputLabel>Tipo Documento</InputLabel>
                             <Select name="tipo_documento" value={nuevoProveedor.tipo_documento} label="Tipo Documento" onChange={handleSelectChange}>
-                                {nuevoProveedor.tipo_proveedor === 'empresa' ? 
-                                  <MenuItem value="NIT">NIT</MenuItem> : 
-                                  [<MenuItem key="CC" value="CC">CC</MenuItem>, <MenuItem key="CE" value="CE">CE</MenuItem>]}
+                                {nuevoProveedor.tipo_proveedor === 'empresa' ?
+                                    <MenuItem value="NIT">NIT</MenuItem> :
+                                    [<MenuItem key="CC" value="CC">CC</MenuItem>, <MenuItem key="CE" value="CE">CE</MenuItem>]}
                             </Select>
                         </FormControl>
                         <TextField name="documento" label="Documento" value={nuevoProveedor.documento} onChange={handleChange} fullWidth />
-                        <TextField name="correo" label="Correo Electrónico" type="email" value={nuevoProveedor.correo} onChange={handleChange} fullWidth />
+                        <TextField
+                            name="correo"
+                            label="Correo Electrónico"
+                            type="email"
+                            value={nuevoProveedor.correo}
+                            onChange={handleChange}
+                            fullWidth
+                            error={!!emailError} // Set error state for TextField
+                            helperText={emailError} // Display error message
+                        />
                         <TextField name="telefono" label="Teléfono" value={nuevoProveedor.telefono} onChange={handleChange} fullWidth />
                         <TextField name="direccion" label="Dirección" value={nuevoProveedor.direccion} onChange={handleChange} fullWidth />
-                        
+
                         <FormControl fullWidth disabled={loadingDepartamentos}>
                             <InputLabel>Departamento</InputLabel>
                             <Select name="departamento" value={nuevoProveedor.departamento} label="Departamento" onChange={handleSelectChange}>
@@ -478,13 +540,15 @@ export default function ProveedoresTable() {
                                 {municipios.map(m => <MenuItem key={m.id} value={m.name}>{m.name}</MenuItem>)}
                             </Select>
                         </FormControl>
-                        
+
                         <TextField name="barrio" label="Barrio (Opcional)" value={nuevoProveedor.barrio || ''} onChange={handleChange} fullWidth />
                     </div>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={cerrarModal}>Cancelar</Button>
-                    <Button onClick={guardarProveedor} variant="contained">{modoEdicion ? "Actualizar" : "Guardar"}</Button>
+                    <Button onClick={guardarProveedor} variant="contained" disabled={!!emailError}>
+                        {modoEdicion ? "Actualizar" : "Guardar"}
+                    </Button>
                 </DialogActions>
             </Dialog>
 
@@ -503,14 +567,14 @@ export default function ProveedoresTable() {
                         <div className="col-span-2 md:col-span-1"><strong>Correo:</strong> {detalleActual.correo}</div>
                         <div><strong>Teléfono:</strong> {detalleActual.telefono}</div>
                         <div className="col-span-full"><strong>Dirección:</strong> {`${detalleActual.direccion}, ${detalleActual.barrio || ''}, ${detalleActual.municipio}, ${detalleActual.departamento}`}</div>
-                         <div><strong>Estado:</strong> {detalleActual.estado === 1 ? "Activo" : "Inactivo"}</div>
+                        <div><strong>Estado:</strong> {detalleActual.estado === 1 ? "Activo" : "Inactivo"}</div>
                     </div>
                 }
-                 <div className="mt-8 flex justify-end">
+                <div className="mt-8 flex justify-end">
                     <Button onClick={cerrarDetalle} variant="contained">Cerrar</Button>
                 </div>
             </Modal>
-            
+
             {/* --- DIÁLOGO DE CONFIRMACIÓN DE ELIMINACIÓN --- */}
             <Dialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)}>
                 <DialogTitle>Confirmar Eliminación</DialogTitle>

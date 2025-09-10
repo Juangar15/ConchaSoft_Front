@@ -23,14 +23,13 @@ import TextField from "@mui/material/TextField";
 
 // --- Importaciones de Contexto y UI Personalizada ---
 import { useAuth } from "../../context/authContext";
-import Modal from "../ui/modal/Modal"; // Se mantiene si lo usas para el detalle, o se puede migrar a Dialog
 
 // --- Interfaces ---
 interface ProductoVariante {
   id_talla: number;
   nombre_talla: string;
   color: string;
-  stock: number; // El stock se mostrará, pero no se edita desde aquí
+  stock: number;
 }
 
 interface Producto {
@@ -42,15 +41,14 @@ interface Producto {
   variantes: ProductoVariante[];
 }
 
-// Interfaz para el formulario de variantes (solo talla y color para creación/edición)
 interface FormVariante {
   id_talla: number;
-  nombre_talla: string; // Para mostrar en el select si es necesario, o buscar por id_talla
+  nombre_talla: string;
   color: string;
 }
 
 // --- URLs de API ---
-const API_BASE_URL = 'https://conchasoft-api.onrender.com/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com/api';
 
 export default function ProductosTable() {
   // --- ESTADOS ---
@@ -68,7 +66,6 @@ export default function ProductosTable() {
     estado: true,
   });
 
-  // Las variantes en el formulario ahora solo necesitan talla y color para crear
   const [variantesForm, setVariantesForm] = useState<FormVariante[]>([]);
   const [tallasDisponibles, setTallasDisponibles] = useState<{ id_talla: number, talla: string }[]>([]);
   const [marcasDisponibles, setMarcasDisponibles] = useState<{ id: number, marca: string }[]>([]);
@@ -111,7 +108,7 @@ export default function ProductosTable() {
         valor: typeof p.valor === 'string' ? parseFloat(p.valor) : (p.valor as number)
       }));
       setAllProductos(parsedData);
-      setCurrentPage(1); // Reiniciar paginación al cargar nuevos datos
+      setCurrentPage(1);
     } catch (err: any) {
       setError(`No se pudieron cargar los productos: ${err.message}`);
       toast.error(`Error al cargar productos: ${err.message}`);
@@ -160,7 +157,7 @@ export default function ProductosTable() {
       fetchTallas();
       fetchMarcas();
     }
-  }, [token]);
+  }, [token, logout]);
 
   const { currentTableData, totalPages, totalItems } = useMemo(() => {
     let filteredData = allProductos;
@@ -196,18 +193,18 @@ export default function ProductosTable() {
       await fetchProductos();
     } catch (err: any) {
       toast.error(`${errorMessage}: ${err.message}`);
-      if (err.status === 401 || err.status === 403) logout();
+      if (err instanceof Error && 'status' in err && (err.status === 401 || err.status === 403)) {
+        logout();
+      }
     }
   };
 
   const handleAgregarProducto = async () => {
     const { nombre, valor, id_marca, estado } = nuevoProductoForm;
-
-    // Validar que al menos haya una variante y que sus campos básicos estén llenos
     const isValidVariantes = variantesForm.every(v => v.id_talla !== 0 && v.color.trim() !== '');
 
     if (!nombre || !valor || !id_marca || variantesForm.length === 0 || !isValidVariantes) {
-      toast.error("Por favor completa todos los campos principales y asegura que cada variante tenga Talla y Color válidos.");
+      toast.error("Por favor completa todos los campos y variantes requeridos.");
       return;
     }
 
@@ -217,13 +214,8 @@ export default function ProductosTable() {
         valor: parseFloat(valor),
         id_marca: parseInt(id_marca),
         estado,
-        tallasYColores: variantesForm.map(v => ({
-          id_talla: v.id_talla,
-          color: v.color,
-          cantidad: 0 // El stock inicial es 0 al crear un producto desde aquí
-        })),
+        tallasYColores: variantesForm.map(v => ({ id_talla: v.id_talla, color: v.color, cantidad: 0 })),
       };
-
       const response = await fetch(`${API_BASE_URL}/productos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -242,11 +234,10 @@ export default function ProductosTable() {
     const { nombre, valor, id_marca, estado } = nuevoProductoForm;
 
     if (!detalleActual) return;
-
     const isValidVariantes = variantesForm.every(v => v.id_talla !== 0 && v.color.trim() !== '');
 
     if (!nombre || !valor || !id_marca || variantesForm.length === 0 || !isValidVariantes) {
-      toast.error("Por favor completa todos los campos principales y asegura que cada variante tenga Talla y Color válidos.");
+      toast.error("Por favor completa todos los campos y variantes requeridos.");
       return;
     }
 
@@ -256,20 +247,11 @@ export default function ProductosTable() {
         valor: parseFloat(valor),
         id_marca: parseInt(id_marca),
         estado,
-        // Al editar, si no se introduce stock, se envía el stock existente
-        // Aquí no se está permitiendo editar el stock directamente
         tallasYColores: variantesForm.map(v => {
-          const existingVariant = detalleActual.variantes.find(
-            ev => ev.id_talla === v.id_talla && ev.color === v.color
-          );
-          return {
-            id_talla: v.id_talla,
-            color: v.color,
-            cantidad: existingVariant ? existingVariant.stock : 0 // Si es una variante nueva al editar, su stock inicial es 0
-          };
+          const existingVariant = detalleActual.variantes.find(ev => ev.id_talla === v.id_talla && ev.color === v.color);
+          return { id_talla: v.id_talla, color: v.color, cantidad: existingVariant ? existingVariant.stock : 0 };
         }),
       };
-
       const response = await fetch(`${API_BASE_URL}/productos/${detalleActual.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -305,20 +287,13 @@ export default function ProductosTable() {
 
   const toggleEstado = (producto: Producto) => {
     const apiCall = async () => {
-      // Para cambiar el estado, necesitamos enviar todos los campos que el PUT requiere.
-      // El stock de las variantes se mantiene como está.
       const payload = {
         nombre: producto.nombre,
         valor: producto.valor,
         id_marca: marcasDisponibles.find(m => m.marca === producto.nombre_marca)?.id || 0,
-        estado: !producto.estado, // Cambiar el estado
-        tallasYColores: producto.variantes.map(v => ({
-          id_talla: v.id_talla,
-          color: v.color,
-          cantidad: v.stock // Mantener el stock existente
-        }))
+        estado: !producto.estado,
+        tallasYColores: producto.variantes.map(v => ({ id_talla: v.id_talla, color: v.color, cantidad: v.stock }))
       };
-
       const response = await fetch(`${API_BASE_URL}/productos/${producto.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -336,12 +311,7 @@ export default function ProductosTable() {
   const handleCloseModal = () => {
     setShowAgregarModal(false);
     setShowEditarModal(false);
-    setNuevoProductoForm({
-      nombre: "",
-      valor: "",
-      id_marca: "",
-      estado: true,
-    });
+    setNuevoProductoForm({ nombre: "", valor: "", id_marca: "", estado: true });
     setVariantesForm([]);
     setDetalleActual(null);
   };
@@ -354,14 +324,7 @@ export default function ProductosTable() {
       id_marca: marcasDisponibles.find(m => m.marca === producto.nombre_marca)?.id.toString() || '',
       estado: producto.estado,
     });
-    // Al editar, solo necesitamos la talla y el color para el formulario
-    setVariantesForm(
-      producto.variantes.map((v) => ({
-        id_talla: v.id_talla,
-        nombre_talla: v.nombre_talla,
-        color: v.color,
-      }))
-    );
+    setVariantesForm(producto.variantes.map((v) => ({ id_talla: v.id_talla, nombre_talla: v.nombre_talla, color: v.color })));
     setShowEditarModal(true);
   };
 
@@ -377,28 +340,19 @@ export default function ProductosTable() {
     setConfirmDialogOpen(true);
   };
 
-  const handleProductoFormChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<string>
-  ) => {
+  const handleProductoFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<string>) => {
     const { name, value } = e.target;
     setNuevoProductoForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleVarianteChange = (
-    index: number,
-    field: keyof FormVariante,
-    value: string | number
-  ) => {
+  const handleVarianteChange = (index: number, field: keyof FormVariante, value: string | number) => {
     const newVariantes = [...variantesForm];
     newVariantes[index] = { ...newVariantes[index], [field]: field === 'id_talla' ? (Number(value) || 0) : value };
     setVariantesForm(newVariantes);
   };
 
   const addEmptyVariante = () => {
-    setVariantesForm((prev) => [
-      ...prev,
-      { id_talla: 0, nombre_talla: '', color: '' }, // No 'cantidad' aquí
-    ]);
+    setVariantesForm((prev) => [...prev, { id_talla: 0, nombre_talla: '', color: '#000000' }]); // Inicia con color negro por defecto
   };
 
   const removeVariante = (index: number) => {
@@ -411,7 +365,6 @@ export default function ProductosTable() {
   };
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
-
   const handleItemsPerPageChange = (event: SelectChangeEvent<number>) => {
     setItemsPerPage(parseInt(event.target.value as string, 10));
     setCurrentPage(1);
@@ -420,19 +373,14 @@ export default function ProductosTable() {
   if (loading && allProductos.length === 0) return <div className="p-4 text-center">Cargando productos...</div>;
   if (error) return <div className="p-4 text-center text-red-500">Error: {error}</div>;
 
-  // --- RENDERIZADO DEL COMPONENTE ---
   return (
     <div className="overflow-hidden rounded-xl border border-gray-400 bg-gray-200 dark:border-white/[0.05] dark:bg-white/[0.03]">
-      {/* --- BARRA SUPERIOR CON BOTÓN, BÚSQUEDA Y PAGINACIÓN --- */}
       <div className="p-4 flex flex-col sm:flex-row items-center justify-between flex-wrap gap-4">
         <Button
           variant="contained"
           color="primary"
           startIcon={<AddIcon />}
-          onClick={() => {
-            setShowAgregarModal(true);
-            setVariantesForm([{ id_talla: 0, nombre_talla: '', color: '' }]); // Inicia con una variante vacía sin cantidad
-          }}
+          onClick={() => { setShowAgregarModal(true); addEmptyVariante(); }}
           sx={{ textTransform: 'none' }}
         >
           Agregar Producto
@@ -440,7 +388,7 @@ export default function ProductosTable() {
         <div className="flex items-center gap-4 w-full sm:w-auto">
           <input
             type="text"
-            placeholder="Buscar por nombre, código, marca, color, talla..."
+            placeholder="Buscar producto..."
             className="border border-gray-400 bg-white rounded px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-gray-800 dark:text-white dark:border-gray-600"
             value={searchTerm}
             onChange={handleSearchChange}
@@ -448,15 +396,6 @@ export default function ProductosTable() {
           <FormControl sx={{ minWidth: 120 }} size="small">
             <InputLabel>Items/pág</InputLabel>
             <Select value={itemsPerPage} label="Items/pág" onChange={handleItemsPerPageChange}
-              sx={{
-                '.MuiOutlinedInput-notchedOutline': { borderColor: 'gray !important' },
-                '.MuiSelect-select': { paddingRight: '30px !important' },
-                '.MuiSvgIcon-root': { color: 'gray !important' },
-                color: 'black',
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                    borderColor: 'var(--brand-500) !important',
-                },
-              }}
               className="bg-white dark:bg-gray-800 dark:text-white"
             >
               <MenuItem value={5}>5</MenuItem>
@@ -468,7 +407,6 @@ export default function ProductosTable() {
         </div>
       </div>
 
-      {/* --- TABLA DE PRODUCTOS --- */}
       <div className="max-w-full overflow-x-auto">
         <table className="min-w-full">
           <thead className="border-b border-gray-400 dark:border-white/[0.05]">
@@ -483,307 +421,140 @@ export default function ProductosTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-400 dark:divide-white/[0.05]">
-            {currentTableData.length > 0 ? (
-              currentTableData.map((producto) => (
-                <tr key={producto.id}>
-                  <td className="px-5 py-4 whitespace-nowrap text-gray-800 text-theme-sm dark:text-white/90">{producto.id}</td>
-                  <td className="px-5 py-4 whitespace-nowrap text-gray-800 text-theme-sm dark:text-white/90">{producto.nombre}</td>
-                  <td className="px-5 py-4 whitespace-nowrap text-gray-800 text-theme-sm dark:text-white/90">
-                    {new Intl.NumberFormat('es-CO', {
-                      style: 'currency',
-                      currency: 'COP',
-                      minimumFractionDigits: 0,
-                    }).format(producto.valor)}
-                  </td>
-                  <td className="px-5 py-4 whitespace-nowrap text-gray-800 text-theme-sm dark:text-white/90">
-                    {producto.variantes.reduce((sum, variante) => sum + variante.stock, 0)}
-                  </td>
-                  <td className="px-5 py-4 whitespace-nowrap text-gray-800 text-theme-sm dark:text-white/90">{producto.nombre_marca}</td>
-                  <td className="px-5 py-4 whitespace-nowrap">
-                    <span
-                      onClick={() => toggleEstado(producto)}
-                      className={`cursor-pointer px-2 py-1 rounded-full text-xs font-semibold ${producto.estado ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}
-                    >
-                      {producto.estado ? "Activo" : "Inactivo"}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4 whitespace-nowrap space-x-1">
-                    <Tooltip title="Ver Detalle">
-                      <IconButton color="secondary" onClick={() => verDetalle(producto)}>
-                        <VisibilityIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Editar">
-                      <IconButton color="primary" onClick={() => abrirModalEditar(producto)}>
-                        <EditIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Eliminar">
-                      <IconButton color="error" onClick={() => solicitarConfirmacionEliminacion(producto)}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={7} className="text-center py-4 text-gray-600 dark:text-gray-400">
-                  No hay productos registrados que coincidan con la búsqueda.
+            {currentTableData.map((producto) => (
+              <tr key={producto.id}>
+                <td className="px-5 py-4 whitespace-nowrap">{producto.id}</td>
+                <td className="px-5 py-4 whitespace-nowrap">{producto.nombre}</td>
+                <td className="px-5 py-4 whitespace-nowrap">{new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(producto.valor)}</td>
+                <td className="px-5 py-4 whitespace-nowrap">{producto.variantes.reduce((sum, v) => sum + v.stock, 0)}</td>
+                <td className="px-5 py-4 whitespace-nowrap">{producto.nombre_marca}</td>
+                <td className="px-5 py-4 whitespace-nowrap">
+                  <span onClick={() => toggleEstado(producto)} className={`cursor-pointer px-2 py-1 rounded-full text-xs font-semibold ${producto.estado ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                    {producto.estado ? "Activo" : "Inactivo"}
+                  </span>
+                </td>
+                <td className="px-5 py-4 whitespace-nowrap space-x-1">
+                  <Tooltip title="Ver Detalle"><IconButton color="secondary" onClick={() => verDetalle(producto)}><VisibilityIcon /></IconButton></Tooltip>
+                  {/* --- CAMBIO: Acciones deshabilitadas si el estado es inactivo --- */}
+                  <Tooltip title={!producto.estado ? "El producto está inactivo" : "Editar"}>
+                    <span><IconButton color="primary" onClick={() => abrirModalEditar(producto)} disabled={!producto.estado}><EditIcon /></IconButton></span>
+                  </Tooltip>
+                  <Tooltip title={!producto.estado ? "El producto está inactivo" : "Eliminar"}>
+                    <span><IconButton color="error" onClick={() => solicitarConfirmacionEliminacion(producto)} disabled={!producto.estado}><DeleteIcon /></IconButton></span>
+                  </Tooltip>
                 </td>
               </tr>
-            )}
+            ))}
           </tbody>
         </table>
       </div>
 
-      {/* --- BARRA INFERIOR CON INFO Y PAGINACIÓN --- */}
       <div className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-400 dark:border-white/[0.05]">
           <p className="text-sm text-gray-700 dark:text-gray-300">Mostrando {currentTableData.length} de {totalItems} productos</p>
-          {totalPages > 1 && (
-            <Pagination
-                count={totalPages}
-                page={currentPage}
-                onChange={handlePageChange}
-                color="primary"
-                showFirstButton
-                showLastButton
-                className="mt-4 sm:mt-0"
-                sx={{
-                    '& .MuiPaginationItem-root': {
-                        color: 'black',
-                        '&.Mui-selected': {
-                            backgroundColor: 'var(--brand-500) !important',
-                            color: 'white !important',
-                        },
-                        '&:hover': {
-                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                        },
-                    },
-                    '& .MuiPaginationItem-icon': {
-                        color: 'black',
-                    },
-                    '.dark & .MuiPaginationItem-root': {
-                        color: 'white',
-                        '&.Mui-selected': {
-                            backgroundColor: 'var(--brand-500) !important',
-                            color: 'white !important',
-                        },
-                        '&:hover': {
-                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                        },
-                    },
-                    '.dark & .MuiPaginationItem-icon': {
-                        color: 'white',
-                    },
-                }}
-            />
-          )}
+          {totalPages > 1 && <Pagination count={totalPages} page={currentPage} onChange={handlePageChange} color="primary" />}
       </div>
 
-      {/* --- MODAL DE AGREGAR/EDITAR PRODUCTO --- */}
       <Dialog open={showAgregarModal || showEditarModal} onClose={handleCloseModal} maxWidth="md" fullWidth>
-        <DialogTitle className="text-xl font-semibold text-gray-900 dark:text-white">
-          {showAgregarModal ? "Agregar Nuevo Producto" : "Editar Producto"}
-        </DialogTitle>
-
+        <DialogTitle>{showAgregarModal ? "Agregar Nuevo Producto" : "Editar Producto"}</DialogTitle>
         <DialogContent dividers>
-          {/* Campos principales: ahora en 2 columnas para un mejor ajuste */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-            <TextField
-              name="nombre"
-              label="Nombre *"
-              value={nuevoProductoForm.nombre}
-              onChange={handleProductoFormChange}
-              fullWidth
-              variant="outlined"
-              required
-            />
-
-            <TextField
-              name="valor"
-              label="Valor *"
-              type="text"
-              value={new Intl.NumberFormat("es-CO", {
-                style: "currency",
-                currency: "COP",
-                minimumFractionDigits: 0,
-              }).format(Number(nuevoProductoForm.valor) || 0)}
-              onChange={(e) => {
-                const raw = e.target.value.replace(/[^\d]/g, ""); // elimina $ . , etc
-                const valorNumerico = parseInt(raw, 10) || 0;
-                handleProductoFormChange({
-                  target: { name: "valor", value: valorNumerico.toString() },
-                } as React.ChangeEvent<HTMLInputElement>);
-              }}
-              fullWidth
-              variant="outlined"
-              required
-            />
-
-            <FormControl fullWidth variant="outlined" className="sm:col-span-2">
-              <InputLabel id="marca-select-label">Marca *</InputLabel>
-              <Select
-                labelId="marca-select-label"
-                name="id_marca"
-                value={nuevoProductoForm.id_marca}
-                label="Marca *"
-                onChange={handleProductoFormChange}
-                required
-              >
+            <TextField name="nombre" label="Nombre *" value={nuevoProductoForm.nombre} onChange={handleProductoFormChange} fullWidth required />
+            <TextField name="valor" label="Valor *" type="text" value={new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(Number(nuevoProductoForm.valor) || 0)} onChange={(e) => { const raw = e.target.value.replace(/[^\d]/g, ""); handleProductoFormChange({ target: { name: "valor", value: raw } } as any); }} fullWidth required />
+            <FormControl fullWidth className="sm:col-span-2">
+              <InputLabel>Marca *</InputLabel>
+              <Select name="id_marca" value={nuevoProductoForm.id_marca} label="Marca *" onChange={handleProductoFormChange} required>
                 <MenuItem value="">Seleccionar</MenuItem>
-                {marcasDisponibles.map((marca) => (
-                  <MenuItem key={marca.id} value={marca.id}>
-                    {marca.marca}
-                  </MenuItem>
-                ))}
+                {marcasDisponibles.map((marca) => <MenuItem key={marca.id} value={marca.id}>{marca.marca}</MenuItem>)}
               </Select>
             </FormControl>
           </div>
-
-          {/* TALLAS Y COLORES (Dinámicos) */}
           <div className="mt-6">
-            <label className="block text-lg font-semibold mb-2 text-gray-900 dark:text-white">
-              Variantes <span className="text-red-500">*</span>
-            </label>
-            <div className="space-y-3 max-h-60 overflow-y-auto pr-2 border p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50 dark:border-gray-700">
-              {variantesForm.length === 0 && (
-                <p className="text-gray-600 dark:text-gray-400 text-center py-4">
-                  Haz clic en "Añadir Variante" para empezar.
-                </p>
-              )}
+            <label className="block text-lg font-semibold mb-2">Variantes *</label>
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-2 border p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
               {variantesForm.map((variante, index) => (
-                <div key={index} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end p-3 border border-gray-200 rounded-lg bg-white dark:bg-gray-800 dark:border-gray-700">
-                  <FormControl fullWidth variant="outlined">
-                    <InputLabel id={`talla-select-label-${index}`}>Talla</InputLabel>
-                    <Select
-                      labelId={`talla-select-label-${index}`}
-                      name="id_talla"
-                      value={variante.id_talla === 0 ? '' : variante.id_talla.toString()}
-                      label="Talla"
-                      onChange={(e) => handleVarianteChange(index, "id_talla", parseInt(e.target.value as string, 10))}
-                      required
-                    >
+                <div key={index} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center p-3 border rounded-lg bg-white dark:bg-gray-800">
+                  <FormControl fullWidth>
+                    <InputLabel>Talla</InputLabel>
+                    <Select value={variante.id_talla === 0 ? '' : variante.id_talla.toString()} label="Talla" onChange={(e) => handleVarianteChange(index, "id_talla", parseInt(e.target.value, 10))} required>
                       <MenuItem value="">Seleccione</MenuItem>
-                      {tallasDisponibles.map((talla) => (
-                        <MenuItem key={talla.id_talla} value={talla.id_talla}>
-                          {talla.talla}
-                        </MenuItem>
-                      ))}
+                      {tallasDisponibles.map((talla) => <MenuItem key={talla.id_talla} value={talla.id_talla}>{talla.talla}</MenuItem>)}
                     </Select>
                   </FormControl>
-
-                  <TextField
-                    name="color"
-                    label="Color"
-                    type="text"
-                    value={variante.color}
-                    onChange={(e) => handleVarianteChange(index, "color", e.target.value)}
-                    fullWidth
-                    variant="outlined"
-                    required
-                  />
+                  
+                  {/* --- CAMBIO: Selector de color --- */}
+                  <div className="flex flex-col">
+                    <label htmlFor={`color-picker-${index}`} className="text-sm text-gray-600 dark:text-gray-400 mb-1">Color</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id={`color-picker-${index}`}
+                        type="color"
+                        value={variante.color}
+                        onChange={(e) => handleVarianteChange(index, "color", e.target.value)}
+                        className="p-1 h-10 w-14 block bg-white border border-gray-300 cursor-pointer rounded-lg disabled:opacity-50 disabled:pointer-events-none dark:bg-slate-900 dark:border-gray-700"
+                      />
+                      <span className="font-mono text-sm">{variante.color}</span>
+                    </div>
+                  </div>
 
                   <div className="flex justify-center items-center h-full">
-                    <Tooltip title="Eliminar Variante">
-                      <IconButton color="error" onClick={() => removeVariante(index)}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
+                    <Tooltip title="Eliminar Variante"><IconButton color="error" onClick={() => removeVariante(index)}><DeleteIcon /></IconButton></Tooltip>
                   </div>
                 </div>
               ))}
             </div>
-
-            <button
-              type="button"
-              onClick={addEmptyVariante}
-              className="mt-4 px-4 py-2 rounded-full border border-brand-500 text-brand-500 hover:bg-brand-500/10 dark:hover:bg-brand-500/20 transition flex items-center gap-2 font-semibold"
-            >
-              <AddIcon fontSize="small" />
-              Añadir Variante
+            <button type="button" onClick={addEmptyVariante} className="mt-4 px-4 py-2 rounded-full border border-brand-500 text-brand-500 hover:bg-brand-500/10 transition flex items-center gap-2 font-semibold">
+              <AddIcon fontSize="small" /> Añadir Variante
             </button>
           </div>
         </DialogContent>
-
-        <DialogActions className="pt-6">
+        <DialogActions>
           <Button onClick={handleCloseModal}>Cancelar</Button>
-          <Button onClick={showAgregarModal ? handleAgregarProducto : handleEditarProducto} variant="contained">
-            {showAgregarModal ? "Guardar Producto" : "Actualizar Producto"}
-          </Button>
+          <Button onClick={showAgregarModal ? handleAgregarProducto : handleEditarProducto} variant="contained">{showAgregarModal ? "Guardar" : "Actualizar"}</Button>
         </DialogActions>
       </Dialog>
 
-      {/* --- MODAL DE VER DETALLE --- */}
       <Dialog open={modalDetalleOpen} onClose={cerrarDetalle} maxWidth="md" fullWidth>
-        <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white">
-          Detalle del Producto
-        </DialogTitle>
-
+        <DialogTitle className="font-bold">Detalle del Producto</DialogTitle>
         <DialogContent dividers>
           {detalleActual && (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2">
-              <div className="col-span-1"><strong>Código:</strong> {detalleActual.id}</div>
-              <div className="col-span-1"><strong>Nombre:</strong> {detalleActual.nombre}</div>
-              <div className="col-span-1"><strong>Valor:</strong> {new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(detalleActual.valor)}</div>
-              <div className="col-span-1"><strong>Cantidad Total:</strong> {detalleActual.variantes.reduce((sum, v) => sum + v.stock, 0)}</div>
-              <div className="col-span-1"><strong>Marca:</strong> {detalleActual.nombre_marca}</div>
-              <div className="col-span-1"><strong>Estado:</strong> {detalleActual.estado ? "Activo" : "Inactivo"}</div>
-
+              <div><strong>Código:</strong> {detalleActual.id}</div>
+              <div><strong>Nombre:</strong> {detalleActual.nombre}</div>
+              <div><strong>Valor:</strong> {new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(detalleActual.valor)}</div>
+              <div><strong>Cantidad Total:</strong> {detalleActual.variantes.reduce((sum, v) => sum + v.stock, 0)}</div>
+              <div><strong>Marca:</strong> {detalleActual.nombre_marca}</div>
+              <div><strong>Estado:</strong> {detalleActual.estado ? "Activo" : "Inactivo"}</div>
               <div className="col-span-full mt-4">
-                <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Variantes del Producto</h3>
-                <div className="max-h-60 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4 pr-1 p-4 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600">
-                  {detalleActual.variantes.length > 0 ? (
-                    detalleActual.variantes.map((variante, index) => (
-                      <div
-                        key={`${variante.id_talla}-${variante.color}-${index}`}
-                        className="p-3 border border-gray-300 bg-gray-100 rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white"
-                      >
-                        <p className="text-sm font-medium mb-1">
-                          Talla: <span className="font-semibold">{variante.nombre_talla}</span>
+                <h3 className="text-lg font-semibold mb-2">Variantes</h3>
+                <div className="max-h-60 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4 p-2">
+                  {detalleActual.variantes.map((v, i) => (
+                    <div key={i} className="p-3 border rounded-lg shadow-sm flex items-center justify-between">
+                      <div>
+                        <p><strong>Talla:</strong> {v.nombre_talla}</p>
+                        <p className="flex items-center gap-2"><strong>Color:</strong>
+                          <span style={{ backgroundColor: v.color, width: '1rem', height: '1rem', display: 'inline-block', border: '1px solid #ccc', borderRadius: '50%' }}></span>
+                          <span className="font-mono">{v.color}</span>
                         </p>
-                        <p className="text-sm font-medium mb-1">
-                          Color: <span className="font-semibold">{variante.color}</span>
-                        </p>
-                        <p className="font-semibold">Cantidad: {variante.stock}</p>
                       </div>
-                    ))
-                  ) : (
-                    <p className="text-gray-600 dark:text-gray-400 col-span-full">
-                      No hay variantes registradas para este producto.
-                    </p>
-                  )}
+                      <p className="font-semibold">Cantidad: {v.stock}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           )}
         </DialogContent>
-
-        <DialogActions>
-          <Button onClick={cerrarDetalle} variant="contained">
-            Cerrar
-          </Button>
-        </DialogActions>
+        <DialogActions><Button onClick={cerrarDetalle} variant="contained">Cerrar</Button></DialogActions>
       </Dialog>
 
-
-      {/* --- DIÁLOGO DE CONFIRMACIÓN DE ELIMINACIÓN --- */}
-      <Dialog
-        open={confirmDialogOpen}
-        onClose={() => setConfirmDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
+      <Dialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Confirmar Eliminación</DialogTitle>
         <DialogContent>
-            <DialogContentText>
-                ¿Estás seguro de que deseas eliminar el producto{' '}
-                <strong className="font-semibold">{productoAEliminar?.nombre}</strong>? Esta acción no se puede deshacer.
-            </DialogContentText>
+          <DialogContentText>¿Estás seguro de que deseas eliminar el producto <strong>{productoAEliminar?.nombre}</strong>? Esta acción no se puede deshacer.</DialogContentText>
         </DialogContent>
         <DialogActions>
-            <Button onClick={() => setConfirmDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={confirmarEliminacion} color="error">Eliminar</Button>
+          <Button onClick={() => setConfirmDialogOpen(false)}>Cancelar</Button>
+          <Button onClick={confirmarEliminacion} color="error">Eliminar</Button>
         </DialogActions>
       </Dialog>
     </div>

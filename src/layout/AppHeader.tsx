@@ -23,6 +23,7 @@ const AppHeader: React.FC = () => {
     setApplicationMenuOpen(!isApplicationMenuOpen);
   };
 
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -127,6 +128,7 @@ const AppHeader: React.FC = () => {
             {/* <!-- Dark Mode Toggler --> */}
             <ThemeToggleButton />
             {/* <!-- Dark Mode Toggler --> */}
+            
             
           </div>
           {/* <!-- User Area --> */}

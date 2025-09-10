@@ -19,6 +19,7 @@ import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
 import ChangePasswordForm from "./pages/AuthPages/ChangePassword";
 import { AuthProvider, useAuth } from "./context/authContext"; // <--- Importa AuthProvider
+import PermissionRoute from "./components/auth/PermissionRoute"; // Importa el componente de protección por permisos
 
 // Importa AdminDashboard
 import AdminDashboard from "./pages/Editar/AdminDashboard"; // Asegúrate de que esta ruta sea correcta
@@ -69,17 +70,65 @@ export default function App() {
 
           {/* Grupo de Rutas Protegidas que usan AppLayout */}
           <Route element={<ProtectedRoute> <AppLayout /> </ProtectedRoute>}>
-            <Route path="/dashboard" element={<Home />} />
+            {/* Dashboard - requiere permiso 'dashboard' */}
+            <Route path="/dashboard" element={
+              <PermissionRoute requiredPermission="dashboard">
+                <Home />
+              </PermissionRoute>
+            } />
             <Route path="/blank" element={<Blank />} />
-            <Route path="/roles" element={<Roles />} />
-            <Route path="/roles/:idRol/permisos" element={<Permisos />} />
-            <Route path="/usuarios" element={<Usuarios />} />
-            <Route path="/devoluciones" element={<Devoluciones />} />
-            <Route path="/proveedores" element={<Proveedores />} />
-            <Route path="/clientes" element={<Clientes />} />
-            <Route path="/ventas" element={<Ventas />} />
-            <Route path="/productos" element={<Productos />} />
-            <Route path="/compras" element={<Compras />} />
+            
+            {/* Rutas de Compras - requieren permisos específicos */}
+            <Route path="/compras" element={
+              <PermissionRoute requiredPermission="compras">
+                <Compras />
+              </PermissionRoute>
+            } />
+            <Route path="/proveedores" element={
+              <PermissionRoute requiredPermission="proveedores">
+                <Proveedores />
+              </PermissionRoute>
+            } />
+            <Route path="/productos" element={
+              <PermissionRoute requiredPermission="productos">
+                <Productos />
+              </PermissionRoute>
+            } />
+            
+            {/* Rutas de Ventas - requieren permisos específicos */}
+            <Route path="/ventas" element={
+              <PermissionRoute requiredPermission="ventas">
+                <Ventas />
+              </PermissionRoute>
+            } />
+            <Route path="/clientes" element={
+              <PermissionRoute requiredPermission="clientes">
+                <Clientes />
+              </PermissionRoute>
+            } />
+            <Route path="/devoluciones" element={
+              <PermissionRoute requiredPermission="devoluciones">
+                <Devoluciones />
+              </PermissionRoute>
+            } />
+            
+            {/* Rutas de Administración - requieren permisos específicos */}
+            <Route path="/usuarios" element={
+              <PermissionRoute requiredPermission="usuarios">
+                <Usuarios />
+              </PermissionRoute>
+            } />
+            <Route path="/roles" element={
+              <PermissionRoute requiredPermission="roles">
+                <Roles />
+              </PermissionRoute>
+            } />
+            <Route path="/roles/:idRol/permisos" element={
+              <PermissionRoute requiredPermission="permisos">
+                <Permisos />
+              </PermissionRoute>
+            } />
+            
             {/* Si tienes una página de perfil de usuario individual, podría ir aquí */}
             <Route path="/profile/:login" element={<div>Página de Perfil (mostrar datos del usuario)</div>} />
           </Route>

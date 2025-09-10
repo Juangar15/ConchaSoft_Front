@@ -1,837 +1,388 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from 'react-toastify';
 import axios from 'axios';
-import { toast, Id } from 'react-toastify'; // Importa 'Id' para el toastId
-import 'react-toastify/dist/ReactToastify.css';
+import { useAuth } from '../../context/authContext';
 
-// Importa tus componentes de formulario y UI (asegúrate de que estas rutas sean correctas)
-import Label from '../form/Label';
-import Input from '../form/input/InputField';
-import Button from '../ui/button/Button'; // Tu componente Button.tsx
+// --- Importaciones de Material-UI (MUI) ---
+import {
+  Button,
+  TextField,
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Pagination,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Switch,
+  FormControlLabel,
+  Paper, // Para un contenedor más estético
+  Grid, // Para organizar el formulario del modal
+  Box, // Para un layout flexible
+} from "@mui/material";
+import { SelectChangeEvent } from '@mui/material/Select';
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  ArrowBack as ArrowBackIcon, // Icono para regresar
+} from '@mui/icons-material';
 
-// --- 1. Define las interfaces para tus datos (Añade 'activo') ---
-interface User {
-    login: string;
-    correo: string;
-    id_rol: number;
-    activo: boolean; // Añadido: true para activo, false para inactivo
+// --- Importaciones de UI Personalizada ---
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableRow,
+} from "../ui/table"; // Asegúrate que la ruta sea correcta
+
+// --- CONFIGURACIÓN DE LA URL BASE DE TU API ---
+const API_BASE_URL = 'https://conchasoft-api.onrender.com/api';
+
+// --- INTERFACES ---
+interface Usuario {
+  login: string;
+  correo: string;
+  id_rol: number;
+  nombre_rol?: string;
+  activo: boolean;
 }
 
-interface Role {
-    id: number;
-    rol: string;
+interface Rol {
+  id: number;
+  rol: string;
 }
 
-interface UserFormData {
-    login: string;
-    correo: string;
-    id_rol: number;
-    contraseña?: string; // Para crear un usuario
-    newPassword?: string; // Para actualizar la contraseña de un usuario
-    activo: boolean; // Añadido: Estado de actividad
-}
+export default function UserManagement() {
+  const navigate = useNavigate();
+  const { token } = useAuth();
 
-// Ensure these URLs are correct for your backend deployments
-const API_BASE_URL = 'https://conchasoft-api.onrender.com/api/auth';
-const ROLES_API_URL = 'https://conchasoft-api.onrender.com/api/roles';
+  // --- ESTADOS LOCALES ---
+  const [allUsers, setAllUsers] = useState<Usuario[]>([]);
+  const [roles, setRoles] = useState<Rol[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
+  const [searchTerm, setSearchTerm] = useState("");
 
-// --- Nuevo: Componente de Confirmación para Toastify ---
-interface ConfirmationToastProps {
-    message: string;
-    onConfirm: () => void;
-    onCancel: () => void;
-    toastId: Id;
-}
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modoEdicion, setModoEdicion] = useState(false);
+  const [usuarioEditandoLogin, setUsuarioEditandoLogin] = useState<string | null>(null);
 
-const ConfirmationToast: React.FC<ConfirmationToastProps> = ({ message, onConfirm, onCancel, toastId }) => {
-    return (
-        <div>
-            <p className="mb-3 text-sm text-gray-700 dark:text-gray-200">{message}</p>
-            <div className="flex justify-end space-x-2">
-                <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                        toast.dismiss(toastId); // Cierra el toast
-                        onCancel();
-                    }}
-                >
-                    Cancelar
-                </Button>
-                <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => {
-                        toast.dismiss(toastId); // Cierra el toast
-                        onConfirm();
-                    }}
-                >
-                    Confirmar
-                </Button>
-            </div>
-        </div>
+  const [nuevoUsuario, setNuevoUsuario] = useState({
+    login: '',
+    correo: '',
+    id_rol: 0,
+    contraseña: '',
+    activo: true,
+  });
+
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [usuarioAInteractuar, setUsuarioAInteractuar] = useState<Usuario | null>(null);
+  const [accionAConfirmar, setAccionAConfirmar] = useState<'toggle' | 'delete' | null>(null);
+  
+  // --- LÓGICA DE DATOS ---
+  const fetchUsersAndRoles = useCallback(async () => {
+    setLoading(true);
+    if (!token) {
+      setError("No autenticado.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const [usersResponse, rolesResponse] = await Promise.all([
+        axios.get(`${API_BASE_URL}/usuarios`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API_BASE_URL}/roles`, { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+      
+      const rolesData: Rol[] = rolesResponse.data.roles || [];
+      const usersData: Usuario[] = (usersResponse.data || []).map((u: Usuario) => ({
+        ...u,
+        nombre_rol: rolesData.find(r => r.id === u.id_rol)?.rol || 'Desconocido'
+      }));
+
+
+      setRoles(rolesData);
+      setAllUsers(usersData);
+
+      if (rolesData.length > 0 && nuevoUsuario.id_rol === 0) {
+        setNuevoUsuario(prev => ({ ...prev, id_rol: rolesData[0].id }));
+      }
+    } catch (error) {
+      const errorMsg = "Error al cargar datos. Intente de nuevo más tarde.";
+      setError(errorMsg);
+      toast.error(errorMsg);
+      console.error('Error fetching users and roles:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [token, nuevoUsuario.id_rol]);
+
+  useEffect(() => {
+    fetchUsersAndRoles();
+  }, [fetchUsersAndRoles]);
+
+  const { currentTableData, totalPages, totalItems } = useMemo(() => {
+    const sortedUsers = [...allUsers].sort((a, b) => a.login.localeCompare(b.login));
+    const filtered = sortedUsers.filter(u =>
+      u.login.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.correo.toLowerCase().includes(searchTerm.toLowerCase())
     );
-};
+    return {
+      currentTableData: filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage),
+      totalPages: Math.ceil(filtered.length / itemsPerPage),
+      totalItems: filtered.length,
+    };
+  }, [allUsers, searchTerm, currentPage, itemsPerPage]);
 
+  const handlePageChange = (_e: React.ChangeEvent<unknown>, v: number) => setCurrentPage(v);
+  const handleChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => { setSearchTerm(e.target.value); setCurrentPage(1); };
+  const handleItemsPerPageChange = (e: SelectChangeEvent<number>) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); };
 
-const UserManagement: React.FC = () => {
-    const navigate = useNavigate();
-
-    const [users, setUsers] = useState<User[]>([]);
-    const [roles, setRoles] = useState<Role[]>([]);
-    const [loading, setLoading] = useState<boolean>(true);
-    const [generalError, setGeneralError] = useState<string | null>(null); // Para errores generales de la API
-
-    // Estados para errores de validación de campos específicos
-    const [loginError, setLoginError] = useState<string | null>(null);
-    const [correoError, setCorreoError] = useState<string | null>(null);
-    const [passwordError, setPasswordError] = useState<string | null>(null);
-    const [newPasswordError, setNewPasswordError] = useState<string | null>(null);
-
-    const [isEditing, setIsEditing] = useState<boolean>(false);
-    const [currentEditingUser, setCurrentEditingUser] = useState<User | null>(null);
-    // --- 2. Estado del formulario (Añade 'activo') ---
-    const [formData, setFormData] = useState<UserFormData>({
-        login: '',
-        correo: '',
-        id_rol: 0, // O el ID del primer rol si lo sabes, ej: 1
-        contraseña: '',
-        newPassword: '',
-        activo: true, // Por defecto, un nuevo usuario es activo
+  const abrirModalAgregar = () => {
+    setModoEdicion(false);
+    setUsuarioEditandoLogin(null);
+    setNuevoUsuario({
+      login: '',
+      correo: '',
+      id_rol: roles.length > 0 ? roles[0].id : 0,
+      contraseña: '',
+      activo: true,
     });
+    setIsModalOpen(true);
+  };
+  
+  const abrirModalEditar = (usuario: Usuario) => {
+    setModoEdicion(true);
+    setUsuarioEditandoLogin(usuario.login);
+    setNuevoUsuario({
+      login: usuario.login,
+      correo: usuario.correo,
+      id_rol: usuario.id_rol,
+      contraseña: '',
+      activo: usuario.activo,
+    });
+    setIsModalOpen(true);
+  };
+  
+  const cerrarModal = () => setIsModalOpen(false);
 
-    const getToken = () => localStorage.getItem('token');
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown }> | SelectChangeEvent<number>) => {
+    const target = e.target as HTMLInputElement;
+    const { name, value, type, checked } = target;
 
-    // Regex para validaciones
-    const alphanumericRegex = /^[a-zA-Z0-9]*$/;
-    const noSpacesRegex = /^\S*$/;
+    setNuevoUsuario(prev => ({
+        ...prev,
+        [name as string]: type === 'checkbox' ? checked : value,
+    }));
+  };
 
-    // --- Funciones de Validación Individuales ---
-    const validateLogin = (value: string): string | null => {
-        if (!value.trim()) {
-            return "El login es requerido.";
-        }
-        if (!noSpacesRegex.test(value)) {
-            return "El login no puede contener espacios.";
-        }
-        if (!alphanumericRegex.test(value)) {
-            return "El login solo puede contener letras y números.";
-        }
-        return null; // Válido
-    };
-
-    const validateCorreo = (value: string): string | null => {
-        if (!value.trim()) {
-            return "El correo es requerido.";
-        }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-            return "El formato del correo electrónico no es válido.";
-        }
-        return null;
-    };
-
-    const validatePassword = (value: string): string | null => {
-    if (!value.trim()) {
-        return "La contraseña es requerida.";
+  const guardarUsuario = async () => {
+    if (!token) {
+      return toast.error("No autenticado.");
     }
-    if (value.length < 8) {
-        return "La contraseña debe tener al menos 8 caracteres.";
+    if (!nuevoUsuario.login || !nuevoUsuario.correo || !nuevoUsuario.id_rol) {
+      return toast.warn("Los campos Login, Correo y Rol son obligatorios.");
     }
-    if (!/[A-Z]/.test(value)) {
-        return "Debe contener al menos una letra mayúscula.";
-    }
-    if (!/[a-z]/.test(value)) {
-        return "Debe contener al menos una letra minúscula.";
-    }
-    if (!/\d/.test(value)) {
-        return "Debe contener al menos un número.";
-    }
-    if (!/[!@#$%^&*(),.?":{}|<>]/.test(value)) {
-        return "Debe contener al menos un carácter especial.";
+    if (!modoEdicion && !nuevoUsuario.contraseña) {
+      return toast.warn("La contraseña es obligatoria para crear un nuevo usuario.");
     }
 
-    // Evitar secuencias numéricas o alfabéticas
-    const sequences = ['123456', 'abcdef', 'qwerty', '654321', '098765'];
-    const lower = value.toLowerCase();
-    if (sequences.some(seq => lower.includes(seq))) {
-        return "No se permiten secuencias comunes como '123456' o 'abcdef'.";
-    }
-
-    // Evitar repeticiones consecutivas del mismo carácter
-    if (/(\w)\1{3,}/.test(value)) {
-        return "No se permiten más de 3 caracteres iguales consecutivos.";
-    }
-
-    // Evitar solo símbolos repetidos como @@@@@@@
-    if (/^[!@#$%^&*()_+\-=\\[\]{};':"|,.<>/?]{6,}$/
-.test(value)) {
-        return "La contraseña no puede estar compuesta solo por símbolos.";
-    }
-
-    return null; // Si pasa todas las reglas, es válida
-};
-
-
-    // --- Manejadores de Cambio con Validación en Tiempo Real ---
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value, type, checked } = e.target as HTMLInputElement; // Cast para acceder a 'checked'
-
-        // --- 3. Manejo de entrada para el campo 'activo' (checkbox) ---
-        setFormData((prev) => ({
-            ...prev,
-            [name]: name === 'id_rol' ? parseInt(value, 10) : (type === 'checkbox' ? checked : value)
-        }));
-
-        // Validar en tiempo real y establecer errores específicos
-        if (name === 'login') {
-            setLoginError(validateLogin(value));
-        } else if (name === 'correo') {
-            setCorreoError(validateCorreo(value));
-        } else if (name === 'contraseña') {
-            setPasswordError(validatePassword(value));
-        } else if (name === 'newPassword') {
-            setNewPasswordError(value ? validatePassword(value) : null);
-        }
-    };
-
-
-    /**
-     * @function fetchRoles
-     * @description Fetches the list of roles from the API.
-     * IMPORTANT: Now expects the API to return an object with a 'roles' array.
-     */
-    const fetchRoles = useCallback(async () => {
-        try {
-            const token = getToken();
-            if (!token) {
-                setGeneralError('No autenticado. Por favor, inicia sesión.');
-                return;
-            }
-            const response = await axios.get(ROLES_API_URL, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-
-            if (Array.isArray(response.data.roles)) {
-                setRoles(response.data.roles);
-            } else {
-                setRoles([]); // Fallback to empty array
-                toast.warn("Formato inesperado de la API de roles. No se pudo cargar la lista de roles.");
-            }
-        } catch (err) {
-            if (axios.isAxiosError(err) && err.response) {
-                toast.error(err.response.data.error || 'Error al cargar roles.');
-            } else {
-                toast.error('Error de red o desconocido al cargar roles.');
-            }
-            setGeneralError('Error al cargar roles. No se pudo obtener la lista de roles.');
-        }
-    }, []);
-
-    /**
-     * @function fetchUsers
-     * @description Fetches the list of users from the API.
-     * Optionally takes `estado` for filtering.
-     */
-    const fetchUsers = useCallback(async () => {
-        setLoading(true);
-        setGeneralError(null);
-        try {
-            const token = getToken();
-            if (!token) {
-                setGeneralError('No autenticado. Por favor, inicia sesión.');
-                setLoading(false);
-                return;
-            }
-            // --- 4. fetchUsers: Ahora el backend devuelve un objeto con 'users' ---
-            // Puedes añadir parámetros de búsqueda y paginación si los implementas en el front
-            const response = await axios.get(`${API_BASE_URL}/users`, {
-                headers: { Authorization: `Bearer ${token}` },
-                // params: { page: 1, limit: 10, search: '', estado: 1 } // Ejemplo de cómo enviar filtros
-            });
-            // Asumiendo que el backend devuelve { usuarios: [...], totalItems: N, currentPage: M, ... }
-            setUsers(response.data.users || []); // Asegúrate de que coincida con la propiedad del backend
-            toast.success('Usuarios cargados exitosamente.');
-        } catch (err) {
-            if (axios.isAxiosError(err) && err.response) {
-                setGeneralError(err.response.data.error || 'Error al cargar usuarios.');
-                toast.error(err.response.data.error || 'Error al cargar usuarios.');
-            } else {
-                setGeneralError('Error de red o desconocido al cargar usuarios.');
-                toast.error('Error de red o desconocido al cargar usuarios.');
-            }
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    // Este useEffect se ejecutará solo cuando la lista de 'roles' cambie y tenga contenido.
-    useEffect(() => {
-        // Si no estamos editando y ya tenemos roles cargados
-        if (!isEditing && roles.length > 0) {
-            // Establecemos el id_rol en el formulario al ID del primer rol de la lista
-            setFormData(prev => ({ ...prev, id_rol: roles[0].id }));
-        }
-    }, [roles, isEditing]);
-
-    // Fetch roles and users on component mount
-    useEffect(() => {
-        fetchRoles();
-        fetchUsers();
-    }, [fetchRoles, fetchUsers]);
-
-
-    // --- Funciones de Manejo de Formularios con Validación Final ---
-
-    const handleCreateUser = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setGeneralError(null);
-        setLoginError(null);
-        setCorreoError(null);
-        setPasswordError(null);
-
-        // Validaciones finales antes de enviar
-        const loginErr = validateLogin(formData.login);
-        const correoErr = validateCorreo(formData.correo);
-        const passwordErr = validatePassword(formData.contraseña || ''); // La contraseña es requerida para crear
-
-        setLoginError(loginErr);
-        setCorreoError(correoErr);
-        setPasswordError(passwordErr);
-
-        if (loginErr || correoErr || passwordErr) {
-            toast.error('Por favor, corrige los errores en el formulario.');
-            setLoading(false);
-            return;
-        }
-
-        try {
-            const token = getToken();
-            if (!token) {
-                setGeneralError('No autenticado.');
-                toast.error('No autenticado.');
-                setLoading(false);
-                return;
-            }
-            // --- 5. handleCreateUser: Envía el campo 'activo' ---
-            await axios.post(`${API_BASE_URL}/users/create`, {
-                login: formData.login,
-                correo: formData.correo,
-                id_rol: formData.id_rol,
-                contraseña: formData.contraseña,
-                activo: formData.activo, // Envía el estado activo
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            toast.success('Usuario creado exitosamente.');
-            setFormData({ // Restablece el formulario a valores iniciales
-                login: '',
-                correo: '',
-                id_rol: roles.length > 0 ? roles[0].id : 0,
-                contraseña: '',
-                newPassword: '',
-                activo: true, // Restablece activo a true por defecto
-            });
-            fetchUsers(); // Refresh the user list
-        } catch (err) {
-            if (axios.isAxiosError(err) && err.response) {
-                setGeneralError(err.response.data.error || 'Error al crear usuario.');
-                toast.error(err.response.data.error || 'Error al crear usuario.');
-            } else {
-                setGeneralError('Error de red o desconocido al crear usuario.');
-                toast.error('Error de red o desconocido al crear usuario.');
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleEditClick = (user: User) => {
-        setIsEditing(true);
-        setCurrentEditingUser(user);
-        setFormData({
-            login: user.login,
-            correo: user.correo,
-            id_rol: user.id_rol,
-            contraseña: '', // Las contraseñas nunca deben rellenarse
-            newPassword: '',
-            activo: user.activo, // Carga el estado actual del usuario
-        });
-        // Limpiar errores al iniciar la edición
-        setLoginError(null);
-        setCorreoError(null);
-        setPasswordError(null);
-        setNewPasswordError(null);
-        setGeneralError(null);
-    };
-
-    const handleUpdateUser = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setGeneralError(null);
-        setLoginError(null); // El login no se edita, pero lo limpiamos por si acaso
-        setCorreoError(null);
-        setNewPasswordError(null);
-
-
-        if (!currentEditingUser) {
-            toast.error('No hay usuario seleccionado para actualizar.');
-            setLoading(false);
-            return;
+    try {
+      if (modoEdicion) {
+        const payload: { correo: string; id_rol: number; activo: boolean; newPassword?: string } = {
+          correo: nuevoUsuario.correo,
+          id_rol: nuevoUsuario.id_rol,
+          activo: nuevoUsuario.activo,
         };
-
-        const updateData: Partial<UserFormData> = {};
-        let hasChanges = false;
-        let isValid = true;
-
-        // Validar correo si ha cambiado
-        if (formData.correo !== currentEditingUser.correo) {
-            const correoErr = validateCorreo(formData.correo);
-            setCorreoError(correoErr);
-            if (correoErr) isValid = false;
-            else {
-                updateData.correo = formData.correo;
-                hasChanges = true;
-            }
+        if (nuevoUsuario.contraseña) {
+          payload.newPassword = nuevoUsuario.contraseña;
         }
+        await axios.put(`${API_BASE_URL}/auth/users/${usuarioEditandoLogin}`, payload, { headers: { Authorization: `Bearer ${token}` } });
+        toast.success("Usuario actualizado con éxito.");
+      } else {
+        await axios.post(`${API_BASE_URL}/auth/users/create`, nuevoUsuario, { headers: { Authorization: `Bearer ${token}` } });
+        toast.success("Usuario creado con éxito.");
+      }
+      await fetchUsersAndRoles();
+      cerrarModal();
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        toast.error(err.response.data.error || "Ocurrió un error.");
+      } else {
+        toast.error("Error de red o desconocido.");
+      }
+    }
+  };
 
-        // Validar y agregar rol si ha cambiado
-        if (formData.id_rol !== currentEditingUser.id_rol) {
-            updateData.id_rol = formData.id_rol;
-            hasChanges = true;
+  const solicitarConfirmacion = (usuario: Usuario, accion: 'toggle' | 'delete') => {
+    setUsuarioAInteractuar(usuario);
+    setAccionAConfirmar(accion);
+    setConfirmDialogOpen(true);
+  };
+  
+  const confirmarAccion = async () => {
+    if (!usuarioAInteractuar || !accionAConfirmar) return;
+    if (!token) {
+      toast.error("No autenticado.");
+      return;
+    }
+    const login = usuarioAInteractuar.login;
+
+    try {
+        if (accionAConfirmar === 'toggle') {
+            const newStatus = !usuarioAInteractuar.activo;
+            await axios.put(`${API_BASE_URL}/auth/users/${login}/toggle-status`, { activo: newStatus ? 1 : 0 }, { headers: { Authorization: `Bearer ${token}` } });
+            toast.success(`Estado del usuario ${login} cambiado con éxito.`);
+        } else if (accionAConfirmar === 'delete') {
+            await axios.delete(`${API_BASE_URL}/auth/users/${login}`, { headers: { Authorization: `Bearer ${token}` } });
+            toast.success(`Usuario ${login} eliminado con éxito.`);
         }
+        await fetchUsersAndRoles();
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        toast.error(err.response.data.error || "Ocurrió un error.");
+      } else {
+        toast.error("Error de red o desconocido.");
+      }
+    } finally {
+        setConfirmDialogOpen(false);
+        setUsuarioAInteractuar(null);
+        setAccionAConfirmar(null);
+    }
+  };
 
-        // Validar nueva contraseña si se ha proporcionado
-        if (formData.newPassword) {
-            const newPasswordErr = validatePassword(formData.newPassword);
-            setNewPasswordError(newPasswordErr);
-            if (newPasswordErr) isValid = false;
-            else {
-                updateData.newPassword = formData.newPassword; // Enviar como newPassword al backend
-                hasChanges = true;
-            }
-        }
+  const getConfirmationText = () => {
+    if (!usuarioAInteractuar || !accionAConfirmar) return { title: '', content: '', button: '' };
+    if (accionAConfirmar === 'toggle') {
+      return {
+        title: `Confirmar ${usuarioAInteractuar.activo ? 'Desactivación' : 'Activación'}`,
+        content: `¿Estás seguro de que quieres ${usuarioAInteractuar.activo ? 'desactivar' : 'activar'} al usuario ${usuarioAInteractuar.login}?`,
+        button: usuarioAInteractuar.activo ? 'Desactivar' : 'Activar'
+      }
+    }
+    return {
+      title: 'Confirmar Eliminación',
+      content: `¿Estás seguro de que quieres eliminar al usuario ${usuarioAInteractuar.login}? Esta acción es irreversible.`,
+      button: 'Eliminar'
+    }
+  }
 
-        // --- 5. handleUpdateUser: Compara y envía el campo 'activo' ---
-        if (formData.activo !== currentEditingUser.activo) {
-            updateData.activo = formData.activo;
-            hasChanges = true;
-        }
+  if (loading && allUsers.length === 0) return <div className="p-4 text-center">Cargando usuarios...</div>;
+  if (error) return <div className="p-4 text-center text-red-500">{error}</div>;
 
+  return (
+    <Paper elevation={3} sx={{ p: 4, borderRadius: '12px' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate('/dashboard')}>
+                Regresar
+            </Button>
+            <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={abrirModalAgregar}>
+                Agregar Usuario
+            </Button>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
+          <TextField label="Buscar por Login o Correo" variant="outlined" size="small" value={searchTerm} onChange={handleChangeSearch} sx={{ width: { xs: '100%', sm: 250 } }}/>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Items/pág</InputLabel>
+            <Select value={itemsPerPage} label="Items/pág" onChange={handleItemsPerPageChange}>
+              <MenuItem value={5}>5</MenuItem><MenuItem value={10}>10</MenuItem><MenuItem value={20}>20</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+      </Box>
 
-        if (!isValid) {
-            toast.error('Por favor, corrige los errores en el formulario.');
-            setLoading(false);
-            return;
-        }
+      <div className="max-w-full overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow><TableCell isHeader>Login</TableCell><TableCell isHeader>Correo</TableCell><TableCell isHeader>Rol</TableCell><TableCell isHeader>Estado</TableCell><TableCell isHeader>Acciones</TableCell></TableRow>
+          </TableHeader>
+          <TableBody>
+            {currentTableData.map((usuario) => (
+              <TableRow key={usuario.login} sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}>
+                <TableCell>{usuario.login}</TableCell>
+                <TableCell>{usuario.correo}</TableCell>
+                <TableCell>{usuario.nombre_rol}</TableCell>
+                <TableCell>
+                  <Tooltip title={`Clic para ${usuario.activo ? 'desactivar' : 'activar'}`}>
+                    <span onClick={() => solicitarConfirmacion(usuario, 'toggle')}
+                        className={`px-2 py-1 rounded-full text-xs font-semibold cursor-pointer ${usuario.activo ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                      {usuario.activo ? "Activo" : "Inactivo"}
+                    </span>
+                  </Tooltip>
+                </TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', gap: 0.5 }}>
+                    <Tooltip title="Editar Usuario">
+                      <span><IconButton color="secondary" onClick={() => abrirModalEditar(usuario)} disabled={!usuario.activo}><EditIcon /></IconButton></span>
+                    </Tooltip>
+                    <Tooltip title="Eliminar Usuario">
+                      <span><IconButton color="error" onClick={() => solicitarConfirmacion(usuario, 'delete')} disabled={!usuario.activo}><DeleteIcon /></IconButton></span>
+                    </Tooltip>
+                  </Box>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
 
-        if (!hasChanges) {
-            toast.info('No hay cambios para actualizar.');
-            setLoading(false);
-            return;
-        }
+      <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <p className="text-sm text-gray-700">Mostrando {currentTableData.length} de {totalItems}</p>
+        {totalPages > 1 && <Pagination count={totalPages} page={currentPage} onChange={handlePageChange} color="primary" />}
+      </Box>
 
-        try {
-            const token = getToken();
-            if (!token) {
-                setGeneralError('No autenticado.');
-                toast.error('No autenticado.');
-                setLoading(false);
-                return;
-            }
-            // Ajusta la propiedad de la contraseña según lo que espera tu backend (contraseña o newPassword)
-            const payload = {
-  ...updateData
-};
-
-
-            await axios.put(`${API_BASE_URL}/users/${currentEditingUser.login}`, payload, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            toast.success('Usuario actualizado exitosamente.');
-            setIsEditing(false);
-            setCurrentEditingUser(null);
-            setFormData({ login: '', correo: '', id_rol: roles.length > 0 ? roles[0].id : 0, contraseña: '', newPassword: '', activo: true });
-            fetchUsers(); // Refresh the user list
-        } catch (err) {
-            if (axios.isAxiosError(err) && err.response) {
-                setGeneralError(err.response.data.error || 'Error al actualizar usuario.');
-                toast.error(err.response.data.error || 'Error al actualizar usuario.');
-            } else {
-                setGeneralError('Error de red o desconocido al actualizar usuario.');
-                toast.error('Error de red o desconocido al actualizar usuario.');
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // --- Nueva función para cambiar el estado (activar/desactivar) de un usuario ---
-    const handleChangeUserStatus = async (userLogin: string, currentStatus: boolean) => {
-        const newStatus = !currentStatus;
-        const action = newStatus ? 'activar' : 'desactivar';
-        const confirmationMessage = `¿Estás seguro de que quieres ${action} al usuario ${userLogin}?`;
-
-        // Utiliza una promesa para manejar la confirmación con Toastify
-        const confirmAction = () => {
-            return new Promise<void>((resolve, reject) => {
-                toast.info(
-                    ({ toastProps }) => (
-                        <ConfirmationToast
-                            message={confirmationMessage}
-                            onConfirm={resolve}
-                            onCancel={reject}
-                            toastId={toastProps.toastId}
-                        />
-                    ),
-                    {
-                        autoClose: false, // El toast no se cierra automáticamente
-                        closeButton: false, // No muestra el botón de cerrar predeterminado
-                        draggable: false, // Evita que se pueda arrastrar
-                        closeOnClick: false, // Evita que se cierre al hacer clic fuera
-                    }
-                );
-            });
-        };
-
-        try {
-            await confirmAction(); // Espera a que el usuario confirme o cancele en el toast
-
-            setLoading(true);
-            setGeneralError(null);
-            const token = getToken();
-            if (!token) {
-                setGeneralError('No autenticado.');
-                toast.error('No autenticado.');
-                setLoading(false);
-                return;
-            }
-            await axios.put(`${API_BASE_URL}/users/${userLogin}/toggle-status`, { activo: newStatus ? 1 : 0 }, { // Envía 1 o 0
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            toast.success(`Usuario ${userLogin} ${action} exitosamente.`);
-            fetchUsers(); // Actualizar la lista de usuarios
-        } catch (err) {
-            // Si el error es una cancelación del toast (reject de la promesa), no muestres un toast de error.
-            if (err === 'cancel') {
-                toast.info('Cambio de estado cancelado.');
-                return;
-            }
-            if (axios.isAxiosError(err) && err.response) {
-                setGeneralError(err.response.data.error || `Error al ${action} usuario.`);
-                toast.error(err.response.data.error || `Error al ${action} usuario.`);
-            } else {
-                setGeneralError(`Error de red o desconocido al ${action} usuario.`);
-                toast.error(`Error de red o desconocido al ${action} usuario.`);
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
-
-
-    const handleDeleteUser = async (loginToDelete: string) => {
-        const confirmationMessage = `¿Estás seguro de que quieres eliminar al usuario ${loginToDelete}? Esta acción es irreversible.`;
-
-        const confirmAction = () => {
-            return new Promise<void>((resolve, reject) => {
-                toast.warn(
-                    ({ toastProps }) => (
-                        <ConfirmationToast
-                            message={confirmationMessage}
-                            onConfirm={resolve}
-                            onCancel={reject}
-                            toastId={toastProps.toastId}
-                        />
-                    ),
-                    {
-                        autoClose: false,
-                        closeButton: false,
-                        draggable: false,
-                        closeOnClick: false,
-                    }
-                );
-            });
-        };
-
-        try {
-            await confirmAction();
-
-            setLoading(true);
-            setGeneralError(null);
-            const token = getToken();
-            if (!token) {
-                setGeneralError('No autenticado.');
-                toast.error('No autenticado.');
-                setLoading(false);
-                return;
-            }
-            await axios.delete(`${API_BASE_URL}/users/${loginToDelete}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            toast.success(`Usuario ${loginToDelete} eliminado exitosamente.`);
-            fetchUsers(); // Refresh the user list
-        } catch (err) {
-            if (err === 'cancel') {
-                toast.info('Eliminación de usuario cancelada.');
-                return;
-            }
-            if (axios.isAxiosError(err) && err.response) {
-                setGeneralError(err.response.data.error || 'Error al eliminar usuario.');
-                toast.error(err.response.data.error || 'Error al eliminar usuario.');
-            } else {
-                setGeneralError('Error de red o desconocido al eliminar usuario.');
-                toast.error('Error de red o desconocido al eliminar usuario.');
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md max-w-4xl mx-auto my-8">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Gestión de Usuarios</h2>
-                <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigate('/dashboard')}
-                >
-                    Regresar al Dashboard
-                </Button>
-            </div>
-
-            {generalError && <p className="text-red-500 text-center mb-4">{generalError}</p>}
-            {loading && <p className="text-gray-600 dark:text-gray-400 text-center mb-4">Cargando usuarios...</p>}
-
-            {/* Formulario de Creación/Edición */}
-            <div className="mb-8 p-6 bg-gray-50 dark:bg-gray-700 rounded-lg">
-  <h3 className="text-xl font-semibold text-gray-700 dark:text-white mb-4">
-    {isEditing ? `Editar Usuario: ${currentEditingUser?.login}` : 'Crear Nuevo Usuario'}
-  </h3>
-  <form onSubmit={isEditing ? handleUpdateUser : handleCreateUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-    {/* Login */}
-    <div>
-      <Label htmlFor="login">Login:</Label>
-      <Input
-        id="login"
-        name="login"
-        type="text"
-        placeholder="Nombre de usuario"
-        value={formData.login}
-        onChange={handleInputChange}
-        disabled={isEditing}
-        className={loginError ? "border-error-500 focus:ring-error-500" : ""}
-      />
-      {loginError && <p className="mt-1 text-sm text-error-500">{loginError}</p>}
-    </div>
-
-    {/* Correo */}
-    <div>
-      <Label htmlFor="correo">Correo:</Label>
-      <Input
-        id="correo"
-        name="correo"
-        type="email"
-        placeholder="correo@ejemplo.com"
-        value={formData.correo}
-        onChange={handleInputChange}
-        className={correoError ? "border-error-500 focus:ring-error-500" : ""}
-      />
-      {correoError && <p className="mt-1 text-sm text-error-500">{correoError}</p>}
-    </div>
-
-    {/* Rol */}
-    <div>
-      <Label htmlFor="id_rol">Rol:</Label>
-      <select
-        id="id_rol"
-        name="id_rol"
-        value={formData.id_rol}
-        onChange={handleInputChange}
-        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-500 focus:border-brand-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-      >
-        {roles.length > 0 ? (
-          roles.map((role) => (
-            <option key={role.id} value={role.id}>
-              {role.rol}
-            </option>
-          ))
-        ) : (
-          <option value="" disabled>Cargando roles...</option>
-        )}
-      </select>
-    </div>
-
-    {/* Checkbox activo */}
-    <div className="flex items-center mt-6">
-      <Input
-        id="activo"
-        name="activo"
-        type="checkbox"
-        checked={formData.activo}
-        onChange={handleInputChange}
-        className="mr-2 h-4 w-4 text-brand-600 focus:ring-brand-500 border-gray-300 rounded"
-      />
-      <Label htmlFor="activo" className="text-gray-700 dark:text-white">Usuario Activo</Label>
-    </div>
-
-    {/* Contraseña / Nueva Contraseña */}
-    <div className="md:col-span-2">
-      <Label htmlFor={isEditing ? "newPassword" : "contraseña"}>
-        {isEditing ? "Nueva Contraseña (opcional):" : "Contraseña:"}
-      </Label>
-      <Input
-        id={isEditing ? "newPassword" : "contraseña"}
-        name={isEditing ? "newPassword" : "contraseña"}
-        type="password"
-        placeholder={isEditing ? "Deja vacío para no cambiar" : "Contraseña"}
-        value={isEditing ? formData.newPassword : formData.contraseña}
-        onChange={handleInputChange}
-        className={(isEditing ? newPasswordError : passwordError) ? "border-error-500 focus:ring-error-500" : ""}
-      />
-      {/* Lista de validaciones */}
-      {/* Validación visual de requisitos de contraseña */}
-{(formData.contraseña || formData.newPassword) && (
-  <div className="mt-3 col-span-1 md:col-span-2">
-    <ul className="list-none text-sm space-y-1">
-      {(() => {
-        const currentPassword = (isEditing ? formData.newPassword : formData.contraseña) || '';
-        const validations = [
-          { label: "Mínimo 8 caracteres", valid: currentPassword.length >= 8 },
-          { label: "Al menos una mayúscula", valid: /[A-Z]/.test(currentPassword) },
-          { label: "Al menos una minúscula", valid: /[a-z]/.test(currentPassword) },
-          { label: "Al menos un número", valid: /\d/.test(currentPassword) },
-          { label: "Carácter especial (!@#$...)", valid: /[!@#$%^&*(),.?":{}|<>]/.test(currentPassword) },
-          { label: "Sin secuencias comunes", valid: !['123456', 'abcdef', 'qwerty'].some(seq => currentPassword.toLowerCase().includes(seq)) },
-          { label: "Sin más de 3 repeticiones", valid: !/(\w)\1{3,}/.test(currentPassword) },
-          { label: "Sin solo símbolos", valid: !/^[!@#$%^&*()_+\-=\\[\]{};':"|,.<>/?]{6,}$/.test(currentPassword) },
-          { label: "Sin espacios", valid: !/\s/.test(currentPassword) },
-        ];
-        return validations.map(({ label, valid }, i) => (
-          <li key={i} className={`flex items-center ${valid ? 'text-green-600' : 'text-gray-500'}`}>
-            <span className="mr-2">{valid ? '✔' : '✖'}</span>{label}
-          </li>
-        ));
-      })()}
-    </ul>
-  </div>
-)}
-
-      {(isEditing && newPasswordError) && <p className="mt-1 text-sm text-error-500">{newPasswordError}</p>}
-      {(!isEditing && passwordError) && <p className="mt-1 text-sm text-error-500">{passwordError}</p>}
-    </div>
-
-    {/* Botones */}
-    <div className="col-span-1 md:col-span-2 flex justify-end space-x-3 mt-4">
-      <Button type="submit" size="sm" disabled={loading}>
-        {isEditing ? 'Actualizar Usuario' : 'Crear Usuario'}
-      </Button>
-      {isEditing && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            setIsEditing(false);
-            setCurrentEditingUser(null);
-            setFormData({ login: '', correo: '', id_rol: roles.length > 0 ? roles[0].id : 0, contraseña: '', newPassword: '', activo: true });
-            setLoginError(null);
-            setCorreoError(null);
-            setPasswordError(null);
-            setNewPasswordError(null);
-            setGeneralError(null);
-          }}
-          disabled={loading}
-        >
-          Cancelar
-        </Button>
-      )}
-    </div>
-  </form>
-</div>
-
-
-            {/* Lista de Usuarios */}
-            <h3 className="text-xl font-semibold text-gray-700 dark:text-white mb-4 mt-8 text-center">Lista de Usuarios</h3>
-            <div className="overflow-x-auto">
-                <table className="min-w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md">
-                    <thead>
-  <tr className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
-    <th className="py-3 px-4 border-b border-gray-200 dark:border-gray-600 text-left text-sm font-medium">Login</th>
-    <th className="py-3 px-4 border-b border-gray-200 dark:border-gray-600 text-left text-sm font-medium">Correo</th>
-    <th className="py-3 px-4 border-b border-gray-200 dark:border-gray-600 text-left text-sm font-medium">Rol</th>
-    <th className="py-3 px-4 border-b border-gray-200 dark:border-gray-600 text-left text-sm font-medium">Estado</th>
-    <th className="py-3 px-4 border-b border-gray-200 dark:border-gray-600 text-center text-sm font-medium">Acciones</th>
-  </tr>
-</thead>
-
-                    <tbody>
-  {users.length === 0 && !loading && !generalError && (
-    <tr>
-      <td colSpan={5} className="py-4 px-4 text-center text-gray-500 dark:text-gray-400">
-        No hay usuarios para mostrar.
-      </td>
-    </tr>
-  )}
-
-  {users.map((user) => (
-    <tr
-      key={user.login}
-      className="border-b border-gray-200 dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700"
-    >
-      <td className="py-3 px-4 text-gray-800 dark:text-white">{user.login}</td>
-      <td className="py-3 px-4 text-gray-800 dark:text-white">{user.correo}</td>
-      <td className="py-3 px-4 text-gray-800 dark:text-white">
-        {roles.find((r) => r.id === user.id_rol)?.rol || 'Desconocido'}
-      </td>
-      <td className="py-3 px-4 text-left">
-        <span
-          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-            user.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-          }`}
-        >
-          {user.activo ? 'Activo' : 'Inactivo'}
-        </span>
-      </td>
-      <td className="py-3 px-4 text-center whitespace-nowrap">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => handleEditClick(user)}
-          className="mr-2"
-        >
-          Editar
-        </Button>
-        <Button
-          size="sm"
-          variant={user.activo ? 'secondary' : 'success'}
-          className={`mr-2 ${
-            user.activo
-              ? 'bg-yellow-500 hover:bg-yellow-600'
-              : 'bg-green-500 hover:bg-green-600'
-          } text-white`}
-          onClick={() => handleChangeUserStatus(user.login, user.activo)}
-        >
-          {user.activo ? 'Desactivar' : 'Activar'}
-        </Button>
-        <Button
-          size="sm"
-          variant="primary"
-          className="bg-red-500 hover:bg-red-600 text-white"
-          onClick={() => handleDeleteUser(user.login)}
-        >
-          Eliminar
-        </Button>
-      </td>
-    </tr>
-  ))}
-</tbody>
-
-                </table>
-            </div>
-        </div>
-    );
-};
-
-export default UserManagement;
+      <Dialog open={isModalOpen} onClose={cerrarModal} maxWidth="sm" fullWidth>
+        <DialogTitle>{modoEdicion ? `Editar Usuario: ${usuarioEditandoLogin}` : 'Crear Nuevo Usuario'}</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={3} sx={{ pt: 1 }}>
+            <Grid item xs={12} sm={6}>
+              <TextField label="Login" name="login" value={nuevoUsuario.login} onChange={handleInputChange} fullWidth required disabled={modoEdicion}/>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField label="Correo Electrónico" name="correo" type="email" value={nuevoUsuario.correo} onChange={handleInputChange} fullWidth required/>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth required>
+                <InputLabel>Rol</InputLabel>
+                <Select name="id_rol" value={nuevoUsuario.id_rol} label="Rol" onChange={handleInputChange}>
+                  {roles.map(r => <MenuItem key={r.id} value={r.id}>{r.rol}</MenuItem>)}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField label={modoEdicion ? "Nueva Contraseña (opcional)" : "Contraseña"} name="contraseña" type="password" value={nuevoUsuario.contraseña} onChange={handleInputChange} fullWidth required={!modoEdicion}/>
+            </Grid>
+            <Grid item xs={12}>
+              <FormControlLabel control={<Switch name="activo" checked={nuevoUsuario.activo} onChange={handleInputChange}/>} label="Usuario Activo"/>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ p: '16px 24px' }}>
+          <Button onClick={cerrarModal}>Cancelar</Button>
+          <Button onClick={guardarUsuario} variant="contained">{modoEdicion ? 'Guardar Cambios' : 'Crear Usuario'}</Button>
+        </DialogActions>
+      </Dialog>
+      
+      <Dialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)}>
+        <DialogTitle>{getConfirmationText().title}</DialogTitle>
+        <DialogContent><DialogContentText>{getConfirmationText().content}</DialogContentText></DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialogOpen(false)}>Cancelar</Button>
+          <Button onClick={confirmarAccion} color={accionAConfirmar === 'delete' ? 'error' : 'primary'}>{getConfirmationText().button}</Button>
+        </DialogActions>
+      </Dialog>
+    </Paper>
+  );
+}

@@ -21,7 +21,7 @@ export default function PermisosTable() {
   const { idRol } = useParams<{ idRol: string }>();
   const navigate = useNavigate();
   // === CAMBIO AQUÍ: Ahora desestructuramos 'token' directamente de useAuth() ===
-  const { token } = useAuth();
+  const { token, user, refreshUserData } = useAuth();
 
   const [permisos, setPermisos] = useState<Permiso[]>([]);
   const [permisosAsignados, setPermisosAsignados] = useState<number[]>([]);
@@ -30,6 +30,7 @@ export default function PermisosTable() {
   const [modoEdicion, setModoEdicion] = useState(false);
   const [permisoEditandoId, setPermisoEditandoId] = useState<number | null>(null);
   const [mensajeAlerta, setMensajeAlerta] = useState("");
+  const [mostrarAlerta, setMostrarAlerta] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,11 +168,17 @@ export default function PermisosTable() {
   };
 
   const guardarAsignacionPermisos = async () => {
+    console.log('=== INICIANDO GUARDAR ASIGNACIÓN ===');
+    console.log('Token disponible:', !!token);
+    console.log('ID Rol:', idRol);
+    console.log('Usuario actual:', user);
+    console.log('Permisos a asignar:', permisosAsignados);
+    
     try {
-      // === CAMBIO AQUÍ: Usamos 'token' directamente ===
       if (!token) throw new Error("No hay token de autenticación.");
       if (!idRol) throw new Error("ID de Rol no proporcionado para guardar asignación.");
 
+      console.log('Enviando petición al backend...');
       const response = await fetch(`${API_BASE_URL}/roles/${idRol}/permisos`, {
         method: 'PUT',
         headers: {
@@ -181,23 +188,58 @@ export default function PermisosTable() {
         body: JSON.stringify({ permisoIds: permisosAsignados }),
       });
 
+      console.log('Respuesta del backend:', response.status, response.statusText);
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || `Error al guardar la asignación de permisos: ${response.statusText}`);
       }
 
-      setMensajeAlerta("Asignación de permisos guardada correctamente.");
+      console.log('Asignación guardada exitosamente en el backend');
+
+      // === NUEVO: Actualizar permisos del usuario actual si es el mismo rol ===
+      const isCurrentUserRole = user && user.id_rol === parseInt(idRol);
+      console.log('¿Es el rol del usuario actual?', isCurrentUserRole);
+      console.log('ID rol del usuario:', user?.id_rol);
+      console.log('ID rol a modificar:', parseInt(idRol));
+
+      if (isCurrentUserRole) {
+        console.log('Actualizando permisos del usuario actual...');
+        try {
+          await refreshUserData();
+          console.log('Permisos actualizados exitosamente');
+          setMensajeAlerta("Asignación de permisos guardada correctamente. Tus permisos han sido actualizados en tiempo real.");
+          setMostrarAlerta(true);
+        } catch (refreshError) {
+          console.error('Error al actualizar permisos del usuario:', refreshError);
+          setMensajeAlerta("Asignación de permisos guardada correctamente, pero hubo un error al actualizar tus permisos. Recarga la página para ver los cambios.");
+          setMostrarAlerta(true);
+        }
+      } else {
+        console.log('No es el rol del usuario actual, solo mostrando mensaje de éxito');
+        setMensajeAlerta("Asignación de permisos guardada correctamente.");
+        setMostrarAlerta(true);
+      }
+      
+      console.log('Configurando timeout para navegación...');
       setTimeout(() => {
+        console.log('Navegando a roles...');
         setMensajeAlerta("");
+        setMostrarAlerta(false);
         navigate("/roles");
-      }, 1500);
+      }, 3000);
     } catch (err: unknown) {
+      console.error('Error en guardarAsignacionPermisos:', err);
       if (err instanceof Error) {
         setMensajeAlerta(err.message);
       } else {
         setMensajeAlerta("Ocurrió un error desconocido al guardar la asignación.");
       }
-      setTimeout(() => setMensajeAlerta(""), 3000);
+      setMostrarAlerta(true);
+      setTimeout(() => {
+        setMensajeAlerta("");
+        setMostrarAlerta(false);
+      }, 5000);
     }
   };
 
@@ -230,7 +272,7 @@ export default function PermisosTable() {
         <h2 className="text-lg font-semibold text-gray-700 dark:text-white">Asignar Permisos al Rol {idRol}</h2>
       </div>
 
-      {mensajeAlerta && (
+      {mostrarAlerta && mensajeAlerta && (
         <div className="mx-4 mb-4 text-sm text-green-700 bg-green-100 border border-green-300 rounded p-2 dark:bg-green-900/20 dark:text-green-400 dark:border-green-600">
           {mensajeAlerta}
         </div>
@@ -295,12 +337,28 @@ export default function PermisosTable() {
         >
           Volver a Roles
         </Button>
-        <Button
-          onClick={guardarAsignacionPermisos}
-          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-        >
-          Guardar Asignación
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => {
+              console.log('Probando alerta...');
+              setMensajeAlerta("Esta es una alerta de prueba");
+              setMostrarAlerta(true);
+              setTimeout(() => {
+                setMensajeAlerta("");
+                setMostrarAlerta(false);
+              }, 3000);
+            }}
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+          >
+            Probar Alerta
+          </Button>
+          <Button
+            onClick={guardarAsignacionPermisos}
+            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+          >
+            Guardar Asignación
+          </Button>
+        </div>
       </div>
 
       <Modal isOpen={isModalOpen} handleClose={cerrarModal}>
