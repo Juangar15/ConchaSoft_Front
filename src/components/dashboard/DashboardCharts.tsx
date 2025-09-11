@@ -147,7 +147,7 @@ export default function DashboardCharts() {
       
       // Asegurarse de que los porcentajes sean números válidos
       if (data.ventas_por_tipo_pago) {
-        data.ventas_por_tipo_pago = data.ventas_por_tipo_pago.map(item => ({
+        data.ventas_por_tipo_pago = data.ventas_por_tipo_pago.map((item: DatosGraficos['ventas_por_tipo_pago'][0]) => ({
           ...item,
           porcentaje: isNaN(item.porcentaje) ? 0 : Number(item.porcentaje)
         }));
@@ -279,30 +279,7 @@ export default function DashboardCharts() {
     },
   };
 
-  // Configuración para futuros gráficos
-  const donutOptions: ApexOptions = {
-    plotOptions: {
-      pie: {
-        donut: {
-          size: '65%',
-          labels: {
-            show: true,
-            total: {
-              show: true,
-              label: 'Total',
-              fontSize: '16px',
-              fontWeight: 600,
-              color: '#374151',
-              formatter: function (w: any) {
-                const total = w.globals.seriesTotals.reduce((a: number, b: number) => a + b, 0)
-                return formatCOP(total)
-              }
-            }
-          }
-        }
-      }
-    }
-  };
+
 
   // Opciones para gráfico de barras de ventas vs compras
   const ventasVsComprasOptions: ApexOptions = {

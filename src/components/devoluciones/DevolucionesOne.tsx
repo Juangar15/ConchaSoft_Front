@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+
 import { toast } from 'react-toastify';
 
 import {
@@ -39,6 +39,13 @@ import { useAuth } from '../../context/authContext';
 // --- URL BASE DE LA API ---
 const API_BASE_URL = 'https://conchasoft-api.onrender.com/api';
 
+// Extend jsPDF interface to include autoTable plugin properties
+interface ExtendedJsPDF extends jsPDF {
+  lastAutoTable?: {
+    finalY: number;
+  };
+}
+
 // --- INTERFACES DE DATOS PARA DEVOLUCIONES ---
 
 interface Devolucion {
@@ -64,6 +71,7 @@ interface DevolucionProductoDetalle {
   subtotal_devuelto: number;
   nombre_producto?: string;
   nombre_talla?: string;
+  color?: string;
 }
 
 interface VentaCompletada {
@@ -85,11 +93,22 @@ interface ProductoVenta {
   subtotal: number;
 }
 
+interface Venta {
+  id: number;
+  fecha: string;
+  total: string | number;
+  id_cliente: number;
+  estado: string;
+  nombre?: string;
+  apellido?: string;
+  cliente_nombre?: string;
+  cliente_apellido?: string;
+}
+
 // --- COMPONENTE PRINCIPAL ---
 
 export default function DevolucionesTable() {
   const { token, isAuthenticated, logout } = useAuth();
-  const navigate = useNavigate();
 
   // Estados principales
   const [allDevoluciones, setAllDevoluciones] = useState<Devolucion[]>([]);
@@ -218,7 +237,7 @@ export default function DevolucionesTable() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('Error al cargar ventas.');
-      const data: any[] = await response.json();
+      const data: Venta[] = await response.json();
       console.log('Datos de ventas recibidos:', data);
       
       // Filtrar solo las ventas completadas y transformar los datos
@@ -230,7 +249,7 @@ export default function DevolucionesTable() {
           return {
             id: venta.id,
             fecha: venta.fecha,
-            total: parseFloat(venta.total),
+            total: typeof venta.total === 'string' ? parseFloat(venta.total) : venta.total,
             id_cliente: venta.id_cliente,
             cliente_nombre: venta.nombre || venta.cliente_nombre || 'Sin nombre',
             cliente_apellido: venta.apellido || venta.cliente_apellido || 'Sin apellido'
@@ -261,7 +280,7 @@ export default function DevolucionesTable() {
       console.log('Datos de productos de venta recibidos:', data);
       
       // Usar directamente los productos vendidos con sus colores originales
-      const productosConColor = (data.productosVendidos || []).map((producto: any) => {
+      const productosConColor = (data.productosVendidos || []).map((producto: ProductoVenta) => {
         console.log('Producto original:', producto);
         
         // Usar el color que viene en la respuesta de la venta, o null si no existe
@@ -355,7 +374,7 @@ export default function DevolucionesTable() {
       }
       
       // Usar directamente los productos devueltos con sus colores
-      const productosConColor = (data.productosDevueltos || []).map((producto: any) => {
+      const productosConColor = (data.productosDevueltos || []).map((producto: DevolucionProductoDetalle) => {
         console.log('Producto devuelto original:', producto);
         
         // Usar el color que viene en la respuesta, o null si no existe
@@ -398,7 +417,7 @@ export default function DevolucionesTable() {
 
   // --- LÓGICA DEL FORMULARIO DE NUEVA DEVOLUCIÓN ---
 
-  const handleVentaChange = async (e: SelectChangeEvent<any>) => {
+  const handleVentaChange = async (e: SelectChangeEvent<string>) => {
     const id_venta = Number(e.target.value);
     const ventaSeleccionada = ventasCompletadas.find(v => v.id === id_venta);
     
@@ -415,12 +434,12 @@ export default function DevolucionesTable() {
     }
   };
   
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>) => {
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<string>) => {
     const { name, value } = e.target;
     setNuevaDevolucion(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleProductoChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>) => {
+  const handleProductoChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<string>) => {
     const { name, value } = e.target;
     const productos = [...nuevaDevolucion.productos];
 
@@ -663,7 +682,7 @@ export default function DevolucionesTable() {
             fontStyle: 'bold',
             fontSize: 10
           },
-          body: productosParaPdf.map((p: any) => [
+          body: productosParaPdf.map((p: DevolucionProductoDetalle) => [
             p.nombre_producto,
             p.nombre_talla,
             p.color || 'N/A',
@@ -672,12 +691,12 @@ export default function DevolucionesTable() {
               style: 'currency', 
               currency: 'COP', 
               maximumFractionDigits: 0 
-            }).format(parseFloat(p.precio_unitario_devuelto)),
+            }).format(p.precio_unitario_devuelto),
             new Intl.NumberFormat('es-CO', { 
               style: 'currency', 
               currency: 'COP', 
               maximumFractionDigits: 0 
-            }).format(parseFloat(p.subtotal_devuelto))
+            }).format(p.subtotal_devuelto)
           ]),
           styles: {
             fontSize: 9,
@@ -690,7 +709,7 @@ export default function DevolucionesTable() {
         });
         
         // === RESUMEN FINANCIERO ===
-        const finalY = (doc as any).lastAutoTable.finalY || yPosition + 50;
+        const finalY = (doc as ExtendedJsPDF).lastAutoTable?.finalY || yPosition + 50;
         yPosition = finalY + 15;
         
         // Fondo para el resumen
@@ -859,7 +878,7 @@ export default function DevolucionesTable() {
                 <div className="overflow-x-auto border rounded-lg">
                     <Table>
                         <TableHeader><TableRow><TableCell isHeader>Producto</TableCell><TableCell isHeader>Talla</TableCell><TableCell isHeader>Color</TableCell><TableCell isHeader>Cant.</TableCell><TableCell isHeader>P. Unitario</TableCell><TableCell isHeader>Subtotal</TableCell></TableRow></TableHeader>
-                        <TableBody>{productosDetalle.map((p) => (<TableRow key={p.id}><TableCell>{p.nombre_producto}</TableCell><TableCell>{p.nombre_talla}</TableCell><TableCell><div className="flex items-center gap-2"><div className="w-4 h-4 rounded border" style={{backgroundColor: (p as any).color || '#000000'}}></div><span>{(p as any).color || 'N/A'}</span></div></TableCell><TableCell>{p.cantidad}</TableCell><TableCell>${p.precio_unitario_devuelto.toLocaleString('es-CO')}</TableCell><TableCell>${p.subtotal_devuelto.toLocaleString('es-CO')}</TableCell></TableRow>))}</TableBody>
+                        <TableBody>{productosDetalle.map((p) => (<TableRow key={p.id}><TableCell>{p.nombre_producto}</TableCell><TableCell>{p.nombre_talla}</TableCell><TableCell><div className="flex items-center gap-2"><div className="w-4 h-4 rounded border" style={{backgroundColor: p.color || '#000000'}}></div><span>{p.color || 'N/A'}</span></div></TableCell><TableCell>{p.cantidad}</TableCell><TableCell>${p.precio_unitario_devuelto.toLocaleString('es-CO')}</TableCell><TableCell>${p.subtotal_devuelto.toLocaleString('es-CO')}</TableCell></TableRow>))}</TableBody>
                     </Table>
         </div>
             </>
@@ -876,10 +895,10 @@ export default function DevolucionesTable() {
                 <TextField label="Fecha" type="date" name="fecha" value={nuevaDevolucion.fecha} onChange={handleFormChange} InputLabelProps={{ shrink: true }} InputProps={{ readOnly: true }} />
                 <FormControl fullWidth>
                   <InputLabel>Venta Original</InputLabel>
-                  <Select name="id_venta" value={nuevaDevolucion.id_venta || ''} label="Venta Original" onChange={handleVentaChange}>
+                  <Select name="id_venta" value={nuevaDevolucion.id_venta?.toString() || ''} label="Venta Original" onChange={handleVentaChange}>
                     <MenuItem value=""><em>Seleccionar</em></MenuItem>
                     {ventasCompletadas.map((v) => (
-                      <MenuItem key={v.id} value={v.id}>
+                      <MenuItem key={v.id} value={v.id.toString()}>
                         {`#${v.id} - ${v.cliente_nombre} ${v.cliente_apellido} - ${new Date(v.fecha).toLocaleDateString('es-CO')} - $${v.total.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
                       </MenuItem>
                     ))}
@@ -906,9 +925,9 @@ export default function DevolucionesTable() {
                     <div className="col-span-12 sm:col-span-5">
                       <FormControl fullWidth size="small">
                         <InputLabel>Producto / Talla (Max: {prod.cantidad_maxima})</InputLabel>
-                        <Select name="id_producto_talla" value={prod.id_producto_talla || ''} label="Producto / Talla / Color" onChange={(e) => handleProductoChange(i, e)}>
+                        <Select name="id_producto_talla" value={prod.id_producto_talla?.toString() || ''} label="Producto / Talla / Color" onChange={(e) => handleProductoChange(i, e)}>
                           {productosVenta.map((p) => (
-                            <MenuItem key={p.id_producto_talla} value={p.id_producto_talla}>
+                            <MenuItem key={p.id_producto_talla} value={p.id_producto_talla.toString()}>
                               <div className="flex items-center gap-2">
                                 <div className="w-4 h-4 rounded border" style={{backgroundColor: p.color}}></div>
                                 <span>{`${p.nombre_producto} - ${p.nombre_talla} - ${p.color} (Max: ${p.cantidad})`}</span>

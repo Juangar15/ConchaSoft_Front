@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from 'react-toastify';
 
 import {
@@ -101,7 +100,6 @@ interface ClienteSeleccionable {
 
 export default function VentasTable() {
   const { token, isAuthenticated, logout } = useAuth();
-  const navigate = useNavigate();
 
   // Estados principales
   const [allVentas, setAllVentas] = useState<Venta[]>([]);
@@ -334,7 +332,7 @@ export default function VentasTable() {
       console.log('Productos vendidos recibidos:', data.productosVendidos);
       
       // Asegurarse de que los productos vendidos tengan el color correctamente
-      const productosConColor = (data.productosVendidos || []).map((producto: any) => {
+      const productosConColor = (data.productosVendidos || []).map((producto: VentaProductoDetalle) => {
         console.log('Producto original:', producto);
         
         // Si el producto ya tiene color y no es null/undefined/empty, lo dejamos como está
@@ -386,7 +384,7 @@ export default function VentasTable() {
 
   // --- LÓGICA DEL FORMULARIO DE NUEVA VENTA ---
 
-  const handleClienteChange = async (e: SelectChangeEvent<any>) => {
+  const handleClienteChange = async (e: SelectChangeEvent<number>) => {
     const id_cliente = Number(e.target.value);
     setNuevaVenta(prev => ({ ...prev, id_cliente }));
 
@@ -415,7 +413,7 @@ export default function VentasTable() {
     }
   };
   
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>) => {
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<string>) => {
     const { name, value } = e.target;
 
     if (name === "saldo_a_favor_aplicado") {
@@ -430,7 +428,7 @@ export default function VentasTable() {
     }
   };
 
-  const handleProductoChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>) => {
+  const handleProductoChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<number>) => {
     const { name, value } = e.target;
     const productos = [...nuevaVenta.productos];
 
@@ -680,7 +678,7 @@ export default function VentasTable() {
             fontStyle: 'bold',
             fontSize: 10
           },
-          body: productosParaPdf.map((p: any) => {
+          body: productosParaPdf.map((p: VentaProductoDetalle) => {
             // Buscar el color en productosDisponibles si no existe
             let colorMostrar = 'Sin color';
             if (p.color && p.color.trim() !== '') {
@@ -702,12 +700,12 @@ export default function VentasTable() {
                 style: 'currency', 
                 currency: 'COP', 
                 maximumFractionDigits: 0 
-              }).format(parseFloat(p.precio_unitario)),
+              }).format(parseFloat(p.precio_unitario.toString())),
               new Intl.NumberFormat('es-CO', { 
                 style: 'currency', 
                 currency: 'COP', 
                 maximumFractionDigits: 0 
-              }).format(parseFloat(p.subtotal))
+              }).format(parseFloat(p.subtotal.toString()))
             ];
           }),
           styles: {
@@ -721,7 +719,7 @@ export default function VentasTable() {
         });
         
         // === RESUMEN FINANCIERO ===
-        const finalY = (doc as any).lastAutoTable.finalY || yPosition + 50;
+        const finalY = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY || yPosition + 50;
         yPosition = finalY + 15;
         
         // Fondo para el resumen

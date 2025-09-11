@@ -11,6 +11,13 @@ interface UserInfo {
   permisos: string[]; // <-- ¡ESTA ES LA LÍNEA CLAVE!
 }
 
+interface Role {
+  id: number;
+  rol: string;
+  descripcion: string;
+  estado: boolean;
+}
+
 // Define el tipo para el contexto de autenticación
 interface AuthContextType {
   token: string | null;
@@ -104,7 +111,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         if (rolesResponse.ok) {
           const rolesData = await rolesResponse.json();
-          const userRole = rolesData.roles.find((r: any) => r.id === userData.user.id_rol);
+          const userRole = rolesData.roles.find((r: Role) => r.id === userData.user.id_rol);
           
           if (userRole) {
             console.log('Rol del usuario encontrado:', userRole);

@@ -109,9 +109,10 @@ export default function ProductosTable() {
       }));
       setAllProductos(parsedData);
       setCurrentPage(1);
-    } catch (err: any) {
-      setError(`No se pudieron cargar los productos: ${err.message}`);
-      toast.error(`Error al cargar productos: ${err.message}`);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+      setError(`No se pudieron cargar los productos: ${errorMessage}`);
+      toast.error(`Error al cargar productos: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -129,8 +130,9 @@ export default function ProductosTable() {
       }
       const data: { id_talla: number, talla: string }[] = await response.json();
       setTallasDisponibles(data);
-    } catch (err: any) {
-      toast.error(`Error al cargar tallas: ${err.message}`);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+      toast.error(`Error al cargar tallas: ${errorMessage}`);
     }
   };
 
@@ -146,8 +148,9 @@ export default function ProductosTable() {
       }
       const data: { id: number, marca: string }[] = await response.json();
       setMarcasDisponibles(data);
-    } catch (err: any) {
-      toast.error(`Error al cargar marcas: ${err.message}`);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+      toast.error(`Error al cargar marcas: ${errorMessage}`);
     }
   };
 
@@ -185,14 +188,15 @@ export default function ProductosTable() {
   }, [allProductos, searchTerm, currentPage, itemsPerPage]);
 
   // --- MANEJADORES DE EVENTOS Y ACCIONES CRUD ---
-  const handleAction = async (action: () => Promise<any>, successMessage: string, errorMessage: string) => {
+  const handleAction = async (action: () => Promise<void>, successMessage: string, errorMessage: string) => {
     if (!token) return toast.error("No autenticado.");
     try {
       await action();
       toast.success(successMessage);
       await fetchProductos();
-    } catch (err: any) {
-      toast.error(`${errorMessage}: ${err.message}`);
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : 'Error desconocido';
+      toast.error(`${errorMessage}: ${errMessage}`);
       if (err instanceof Error && 'status' in err && (err.status === 401 || err.status === 403)) {
         logout();
       }
@@ -366,7 +370,7 @@ export default function ProductosTable() {
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
   const handleItemsPerPageChange = (event: SelectChangeEvent<number>) => {
-    setItemsPerPage(parseInt(event.target.value as string, 10));
+    setItemsPerPage(Number(event.target.value));
     setCurrentPage(1);
   };
 
@@ -459,7 +463,7 @@ export default function ProductosTable() {
         <DialogContent dividers>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
             <TextField name="nombre" label="Nombre *" value={nuevoProductoForm.nombre} onChange={handleProductoFormChange} fullWidth required />
-            <TextField name="valor" label="Valor *" type="text" value={new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(Number(nuevoProductoForm.valor) || 0)} onChange={(e) => { const raw = e.target.value.replace(/[^\d]/g, ""); handleProductoFormChange({ target: { name: "valor", value: raw } } as any); }} fullWidth required />
+            <TextField name="valor" label="Valor *" type="text" value={new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", minimumFractionDigits: 0 }).format(Number(nuevoProductoForm.valor) || 0)} onChange={(e) => { const raw = e.target.value.replace(/[^\d]/g, ""); handleProductoFormChange({ target: { name: "valor", value: raw } } as React.ChangeEvent<HTMLInputElement>); }} fullWidth required />
             <FormControl fullWidth className="sm:col-span-2">
               <InputLabel>Marca *</InputLabel>
               <Select name="id_marca" value={nuevoProductoForm.id_marca} label="Marca *" onChange={handleProductoFormChange} required>

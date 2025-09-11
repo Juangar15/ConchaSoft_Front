@@ -34,6 +34,13 @@ import {
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+// Interfaz para jsPDF con autoTable
+interface jsPDFWithAutoTable extends jsPDF {
+  lastAutoTable: {
+    finalY: number;
+  };
+}
+
 // --- Importaciones de Contexto y UI Personalizada ---
 import { useAuth } from '../../context/authContext';
 import Modal from "../ui/modal/Modal";
@@ -71,6 +78,19 @@ interface CompraProductoDetalle {
   cantidad: number;
   precio_unitario: number;
   subtotal: number;
+}
+
+interface CompraProductoDetalleAPI {
+  id_compra_prod_item: number;
+  id_producto: number;
+  id_talla: number;
+  id_producto_talla: number;
+  nombre_producto: string;
+  nombre_talla: string;
+  color: string;
+  cantidad: number;
+  precio_unitario: string | number;
+  subtotal: string | number;
 }
 
 interface ProductoAPI {
@@ -121,6 +141,7 @@ export default function ComprasTable() {
   const [detalleActual, setDetalleActual] = useState<Compra | null>(null);
   const [productosDetalle, setProductosDetalle] = useState<CompraProductoDetalle[]>([]);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
+  const [loadingSelects, setLoadingSelects] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -141,6 +162,8 @@ export default function ComprasTable() {
 
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [compraAAnular, setCompraAAnular] = useState<Compra | null>(null);
+  const [modoEdicion, setModoEdicion] = useState(false);
+  const [compraEditandoId, setCompraEditandoId] = useState<number | null>(null);
 
   // --- LÓGICA DE DATOS ---
   const fetchCompras = async () => {
@@ -151,7 +174,7 @@ export default function ComprasTable() {
       if (response.status === 401 || response.status === 403) { toast.error("Sesión expirada."); logout(); return; }
       if (!response.ok) throw new Error(`Error HTTP: ${response.status}`);
       const data = await response.json();
-      setAllCompras(data.map((c: any) => ({ ...c, total: parseFloat(c.total) || 0 })));
+      setAllCompras(data.map((c: Compra) => ({ ...c, total: typeof c.total === 'string' ? parseFloat(c.total) || 0 : c.total })));
     } catch (err) {
       setError(`No se pudieron cargar las compras: ${err instanceof Error ? err.message : "Error desconocido"}`);
     } finally {
@@ -186,7 +209,7 @@ export default function ComprasTable() {
     }
   };
 
-  useEffect(() => { if(isAuthenticated) fetchCompras(); }, [isAuthenticated, token]);
+  useEffect(() => { if(isAuthenticated) fetchCompras(); }, [isAuthenticated, token, fetchCompras]);
   useEffect(() => { if (isModalOpen && isAuthenticated) fetchSelectOptions(); }, [isModalOpen, isAuthenticated]);
 
   const { currentTableData, totalPages, totalItems } = useMemo(() => {
@@ -214,7 +237,7 @@ export default function ComprasTable() {
       if (!response.ok) throw new Error("No se pudo cargar el detalle.");
       const data = await response.json();
       setDetalleActual({ ...data, total: parseFloat(data.total) || 0 });
-      setProductosDetalle((data.items || []).map((p: any) => ({ ...p, id: p.id_compra_prod_item, precio_unitario: parseFloat(p.precio_unitario), subtotal: parseFloat(p.subtotal) })));
+      setProductosDetalle((data.items || []).map((p: CompraProductoDetalleAPI) => ({ ...p, id: p.id_compra_prod_item, precio_unitario: typeof p.precio_unitario === 'string' ? parseFloat(p.precio_unitario) : p.precio_unitario, subtotal: typeof p.subtotal === 'string' ? parseFloat(p.subtotal) : p.subtotal })));
     } catch (err) {
       toast.error(`Error al ver detalle: ${err instanceof Error ? err.message : "Error desconocido"}`);
     } finally {
@@ -231,7 +254,7 @@ export default function ComprasTable() {
 
   const cerrarModal = () => setIsModalOpen(false);
 
-  const handleProductoChange = (index: number, field: string, value: any) => {
+  const handleProductoChange = (index: number, field: string, value: ProductoSeleccionable | string | number | null) => {
     setNuevaCompra(prev => {
       const updatedProductos = [...prev.productos];
       if (field === 'producto') {
@@ -240,7 +263,7 @@ export default function ComprasTable() {
         const cantidad = Math.max(1, parseInt(String(value).replace(/[^0-9]/g, ''), 10) || 1);
         updatedProductos[index] = { ...updatedProductos[index], cantidad };
       } else if (field === 'precio_unitario') {
-        updatedProductos[index] = { ...updatedProductos[index], precio_unitario: parseFloat(value) || 0 };
+        updatedProductos[index] = { ...updatedProductos[index], precio_unitario: parseFloat(String(value)) || 0 };
       }
       return { ...prev, productos: updatedProductos };
     });
@@ -418,7 +441,7 @@ export default function ComprasTable() {
       const productosParaPdf = compraDetalle.items || [];
       if (productosParaPdf.length > 0) {
         // Calcular totales
-        const subtotal = productosParaPdf.reduce((sum: number, p: any) => sum + (p.precio_unitario * p.cantidad), 0);
+        const subtotal = productosParaPdf.reduce((sum: number, p: CompraProductoDetalle) => sum + (p.precio_unitario * p.cantidad), 0);
         const iva = subtotal * 0.19;
         const total = subtotal + iva;
         
@@ -437,7 +460,7 @@ export default function ComprasTable() {
             fontStyle: 'bold',
             fontSize: 10
           },
-          body: productosParaPdf.map((p: any) => [
+          body: productosParaPdf.map((p: CompraProductoDetalle) => [
             p.nombre_producto,
             p.nombre_talla,
             p.color,
@@ -464,7 +487,7 @@ export default function ComprasTable() {
         });
         
         // === RESUMEN FINANCIERO ===
-        const finalY = (doc as any).lastAutoTable.finalY || yPosition + 50;
+        const finalY = (doc as jsPDFWithAutoTable).lastAutoTable.finalY || yPosition + 50;
         yPosition = finalY + 15;
         
         // Fondo para el resumen con gradiente sutil
@@ -616,13 +639,13 @@ export default function ComprasTable() {
       </Modal>
 
       <Dialog open={isModalOpen} onClose={cerrarModal} maxWidth="lg" fullWidth>
-        <DialogTitle>Nueva Compra</DialogTitle>
+        <DialogTitle>{modoEdicion ? `Editar Compra #${compraEditandoId}` : 'Nueva Compra'}</DialogTitle>
         <DialogContent dividers>
           <div className="space-y-6 pt-2">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <TextField label="Fecha" type="date" value={nuevaCompra.fecha} InputLabelProps={{ shrink: true }} disabled />
               <FormControl fullWidth><InputLabel>Tipo de Pago</InputLabel><Select name="tipo_pago" value={nuevaCompra.tipo_pago} label="Tipo de Pago" onChange={(e) => setNuevaCompra(p => ({ ...p, tipo_pago: e.target.value }))}><MenuItem value="Efectivo">Efectivo</MenuItem><MenuItem value="Tarjeta">Tarjeta</MenuItem><MenuItem value="Transferencia">Transferencia</MenuItem></Select></FormControl>
-              <FormControl fullWidth><InputLabel>Proveedor*</InputLabel><Select required name="id_proveedor" value={nuevaCompra.id_proveedor || ''} label="Proveedor*" onChange={(e) => setNuevaCompra(p => ({ ...p, id_proveedor: Number(e.target.value) }))}>{proveedoresDisponibles.map(p => <MenuItem key={p.id} value={p.id}>{p.nombre_comercial}</MenuItem>)}</Select></FormControl>
+              <FormControl fullWidth><InputLabel>Proveedor*</InputLabel><Select required name="id_proveedor" value={nuevaCompra.id_proveedor || ''} label="Proveedor*" disabled={loadingSelects} onChange={(e) => setNuevaCompra(p => ({ ...p, id_proveedor: Number(e.target.value) }))}>{proveedoresDisponibles.map(p => <MenuItem key={p.id} value={p.id}>{p.nombre_comercial}</MenuItem>)}</Select></FormControl>
             </div>
             <div className="space-y-3">
               <h3 className="font-semibold text-lg">Productos</h3>
@@ -635,6 +658,7 @@ export default function ComprasTable() {
                       value={productosDisponibles.find(p => p.id_producto_talla === prod.id_producto_talla) || null}
                       onChange={(event, newValue) => handleProductoChange(i, 'producto', newValue)}
                       isOptionEqualToValue={(option, value) => option.id_producto_talla === value.id_producto_talla}
+                      disabled={loadingSelects}
                       renderOption={(props, option) => (
                         <Box component="li" {...props}>
                           <Box sx={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: option.color, mr: 1.5, border: '1px solid #ccc', flexShrink: 0 }} />

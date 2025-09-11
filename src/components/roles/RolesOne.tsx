@@ -92,9 +92,10 @@ export default function RolesTable() {
             // La API puede devolver { roles: [...] } o [...] directamente.
             const rolesList = 'roles' in data ? data.roles : data;
             setAllRoles(rolesList);
-        } catch (err: any) {
-            setError(`No se pudieron cargar los roles: ${err.message}`);
-            toast.error(`Error al cargar roles: ${err.message}`);
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+            setError(`No se pudieron cargar los roles: ${errorMessage}`);
+            toast.error(`Error al cargar roles: ${errorMessage}`);
         } finally {
             setLoading(false);
         }
@@ -122,16 +123,16 @@ export default function RolesTable() {
     }, [allRoles, searchTerm, currentPage, itemsPerPage]);
 
     // --- MANEJADOR DE ACCIONES CRUD GENÉRICO ---
-    const handleAction = async (action: () => Promise<any>, successMessage: string, errorMessage: string) => {
+    const handleAction = async (action: () => Promise<void>, successMessage: string, errorMessage: string) => {
         if (!token) return toast.error("No autenticado.");
         try {
             await action();
             toast.success(successMessage);
             await fetchRoles(); // Refrescar datos
-        } catch (err: any) {
-            const apiError = err.message || 'Ocurrió un error desconocido.';
+        } catch (err: unknown) {
+            const apiError = err instanceof Error ? err.message : 'Ocurrió un error desconocido.';
             toast.error(`${errorMessage}: ${apiError}`);
-            if (err.status === 401 || err.status === 403) logout();
+            if (err && typeof err === 'object' && 'status' in err && (err.status === 401 || err.status === 403)) logout();
         }
     };
     

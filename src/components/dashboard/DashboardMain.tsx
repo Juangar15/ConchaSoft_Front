@@ -60,6 +60,18 @@ interface DashboardData {
   }>;
 }
 
+interface ProductVariant {
+  nombre_talla?: string;
+  color?: string;
+  stock?: number;
+  id_producto_talla?: number;
+}
+
+interface Product {
+  nombre?: string;
+  variantes?: ProductVariant[];
+}
+
 interface MetricasRendimiento {
   comparacion_ventas: Array<{
     periodo: string;
@@ -131,47 +143,9 @@ export default function DashboardMain() {
     return luminance > 200; // Umbral para considerar "claro"
   };
 
-  // Intenta resolver el color desde distintas claves comunes en el API
-  const resolveColor = (obj: unknown): string | null => {
-    const anyObj = obj as Record<string, unknown> | null | undefined;
-    if (!anyObj) return null;
-    const keys = [
-      'color',
-      'color_hex',
-      'hex_color',
-      'codigo_color',
-      'codigoColor',
-      'colorCodigo',
-    ];
-    for (const k of keys) {
-      const val = anyObj[k];
-      if (typeof val === 'string' && val.trim().length > 0) return val;
-    }
-    return null;
-  };
 
-  // Resolver color para alerta usando distintas claves/estrategias
-  const getAlertColor = (alerta: any): string | null => {
-    // 1) Si viene color directo en el objeto
-    const direct = resolveColor(alerta);
-    if (direct) return direct;
-    // 2) Por id de variante
-    const idpt = alerta?.id_producto_talla;
-    if (idpt) {
-      const byId = colorLookup[`idpt:${String(idpt)}`];
-      if (byId) return byId;
-    }
-    // 3) Por combinaciones de nombre y talla (original y normalizada)
-    const nombreRaw = alerta?.nombre_producto || alerta?.producto || alerta?.nombre;
-    const tallaRaw = alerta?.nombre_talla || alerta?.talla;
-    const nombreNorm = normalizeText(nombreRaw);
-    const tallaNorm = normalizeTalla(tallaRaw);
-    const key = `${String(nombreRaw)}|${String(tallaRaw)}`;
-    const nkey = `${String(nombreNorm)}|${String(tallaNorm)}`;
-    const byName = colorLookup[key] || colorLookup[nkey];
-    if (byName) return byName;
-    return null;
-  };
+
+
 
   // --- FUNCIONES DE API ---
   const fetchDashboardData = async () => {
@@ -218,10 +192,10 @@ export default function DashboardMain() {
       const map: Record<string, string> = {};
       const byNameTalla: Record<string, Array<{ color: string; stock: number }>> = {};
       if (Array.isArray(products)) {
-        products.forEach((p: any) => {
+        products.forEach((p: Product) => {
           const nombre = p?.nombre;
           const variantes = Array.isArray(p?.variantes) ? p.variantes : [];
-          variantes.forEach((v: any) => {
+          variantes.forEach((v: ProductVariant) => {
             const talla = v?.nombre_talla;
             const color = v?.color;
             const stock = Number(v?.stock || 0);
@@ -245,7 +219,7 @@ export default function DashboardMain() {
       }
       setColorLookup(map);
       setVariantIndexByNameTalla(byNameTalla);
-    } catch (_) {
+    } catch {
       // Silencio: el dashboard seguirá sin colores si falla
     }
   };
@@ -395,11 +369,11 @@ export default function DashboardMain() {
                 // Agrupar alertas por producto+talla para evitar repeticiones y sumar stock de la talla
                 const groups = new Map<string, { nombre: string; talla: string; totalTalla: number }>();
                 for (const a of dashboardData.alertas_stock) {
-                  const nombreRaw = (a as any).nombre_producto || (a as any).producto || (a as any).nombre;
-                  const tallaRaw = (a as any).nombre_talla || (a as any).talla;
+                  const nombreRaw = a.nombre_producto || (a as { producto?: string }).producto || (a as { nombre?: string }).nombre;
+                  const tallaRaw = (a as { nombre_talla?: string }).nombre_talla || a.talla;
                   const key = `${String(normalizeText(nombreRaw))}|${String(normalizeTalla(tallaRaw))}`;
                   const prev = groups.get(key);
-                  const toAdd = Number((a as any).stock_actual || 0);
+                  const toAdd = Number(a.stock_actual || 0);
                   if (prev) {
                     prev.totalTalla += toAdd;
                   } else {
@@ -501,7 +475,7 @@ export default function DashboardMain() {
               <TableBody>
                 {dashboardData.top_productos_vendidos.map((producto, index) => {
                   const key = `${String(producto.nombre_producto)}|${String(producto.talla)}`;
-                  const color = (producto as any).color || colorLookup[key] || null;
+                  const color = producto.color || colorLookup[key] || null;
                   return (
                     <TableRow key={index}>
                       <TableCell className="font-medium">{producto.nombre_producto}</TableCell>

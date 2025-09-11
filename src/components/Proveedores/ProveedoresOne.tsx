@@ -125,9 +125,10 @@ export default function ProveedoresTable() {
             }
             const data: Proveedor[] = await response.json();
             setAllProveedores(data);
-        } catch (err: any) {
-            setError(`No se pudieron cargar los proveedores: ${err.message}`);
-            toast.error(`Error al cargar proveedores: ${err.message}`);
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+            setError(`No se pudieron cargar los proveedores: ${errorMessage}`);
+            toast.error(`Error al cargar proveedores: ${errorMessage}`);
         } finally {
             setLoading(false);
         }
@@ -140,8 +141,9 @@ export default function ProveedoresTable() {
             if (!response.ok) throw new Error('Error al cargar departamentos');
             const data: Departamento[] = await response.json();
             setDepartamentos(data.sort((a, b) => a.name.localeCompare(b.name)));
-        } catch (error: any) {
-            toast.error(`Error al cargar departamentos: ${error.message}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+            toast.error(`Error al cargar departamentos: ${errorMessage}`);
         } finally {
             setLoadingDepartamentos(false);
         }
@@ -156,8 +158,9 @@ export default function ProveedoresTable() {
             if (!response.ok) throw new Error(`Error al cargar municipios`);
             const data: Municipio[] = await response.json();
             setMunicipios(data.sort((a, b) => a.name.localeCompare(b.name)));
-        } catch (error: any) {
-            toast.error(`Error al cargar municipios: ${error.message}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+            toast.error(`Error al cargar municipios: ${errorMessage}`);
         } finally {
             setLoadingMunicipios(false);
         }
@@ -204,15 +207,16 @@ export default function ProveedoresTable() {
         return emailRegex.test(email);
     };
 
-    const handleAction = async (action: () => Promise<any>, successMessage: string, errorMessage: string) => {
+    const handleAction = async (action: () => Promise<void>, successMessage: string, errorMessage: string) => {
         if (!token) return toast.error("No autenticado.");
         try {
             await action();
             toast.success(successMessage);
             await fetchProveedores();
-        } catch (err: any) {
-            toast.error(`${errorMessage}: ${err.message}`);
-            if (err.status === 401 || err.status === 403) logout();
+        } catch (err: unknown) {
+            const errMessage = err instanceof Error ? err.message : 'Error desconocido';
+            toast.error(`${errorMessage}: ${errMessage}`);
+            if (err && typeof err === 'object' && 'status' in err && (err.status === 401 || err.status === 403)) logout();
         }
     };
 
@@ -367,8 +371,8 @@ export default function ProveedoresTable() {
         });
     };
 
-    const handleSelectChange = (e: SelectChangeEvent<any>) => {
-        const { name, value } = e.target;
+    const handleSelectChange = (event: SelectChangeEvent<string>) => {
+        const { name, value } = event.target;
         if (name === 'departamento') {
             const selectedDepto = departamentos.find(d => d.name === value);
             setSelectedDepartmentId(selectedDepto ? selectedDepto.id : null);

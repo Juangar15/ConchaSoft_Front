@@ -127,9 +127,10 @@ export default function ClientesTable() {
             }
             const data: Cliente[] = await response.json();
             setAllClientes(data);
-        } catch (err: any) {
-            setError(`No se pudieron cargar los clientes: ${err.message}`);
-            toast.error(`Error al cargar clientes: ${err.message}`);
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+            setError(`No se pudieron cargar los clientes: ${errorMessage}`);
+            toast.error(`Error al cargar clientes: ${errorMessage}`);
         } finally {
             setLoading(false);
         }
@@ -142,8 +143,9 @@ export default function ClientesTable() {
             if (!response.ok) throw new Error('Error al cargar departamentos');
             const data: DepartmentData[] = await response.json();
             setDepartamentos(data.sort((a, b) => a.name.localeCompare(b.name)));
-        } catch (error: any) {
-            toast.error(`Error al cargar departamentos: ${error.message}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+            toast.error(`Error al cargar departamentos: ${errorMessage}`);
         } finally {
             setLoadingDepartamentos(false);
         }
@@ -158,8 +160,9 @@ export default function ClientesTable() {
             if (!response.ok) throw new Error(`Error al cargar municipios`);
             const data: CityData[] = await response.json();
             setMunicipios(data.sort((a, b) => a.name.localeCompare(b.name)));
-        } catch (error: any) {
-            toast.error(`Error al cargar municipios: ${error.message}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+            toast.error(`Error al cargar municipios: ${errorMessage}`);
         } finally {
             setLoadingMunicipios(false);
         }
@@ -206,16 +209,16 @@ export default function ClientesTable() {
         return emailRegex.test(email);
     };
 
-    const handleAction = async (action: () => Promise<any>, successMessage: string, errorMessage: string) => {
+    const handleAction = async (action: () => Promise<unknown>, successMessage: string, errorMessage: string) => {
         if (!token) return toast.error("No autenticado.");
         try {
             await action();
             toast.success(successMessage);
             await fetchClientes(); // Refrescar datos
-        } catch (err: any) {
-            const apiError = err.message || 'Ocurrió un error desconocido.';
+        } catch (err: unknown) {
+            const apiError = err instanceof Error ? err.message : 'Ocurrió un error desconocido.';
             toast.error(`${errorMessage}: ${apiError}`);
-            if (err.status === 401 || err.status === 403) logout();
+            if (err && typeof err === 'object' && 'status' in err && (err.status === 401 || err.status === 403)) logout();
         }
     };
     
@@ -420,7 +423,7 @@ export default function ClientesTable() {
         });
     };
 
-    const handleSelectChange = (e: SelectChangeEvent<any>) => {
+    const handleSelectChange = (e: SelectChangeEvent<string>) => {
         const { name, value } = e.target;
         if (name === 'departamento') {
             const selectedDepto = departamentos.find(d => d.name === value);
