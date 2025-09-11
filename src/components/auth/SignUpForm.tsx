@@ -17,7 +17,7 @@ export default function VerifyCodeForm() {
   const emailFromState = location.state?.email;
 
   // URL base de tu API desplegada en Render
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com/api';
+  const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com'}/api/auth`;
 
   // Redirigir si no hay email en el estado (el usuario no siguió el flujo)
   useEffect(() => {
