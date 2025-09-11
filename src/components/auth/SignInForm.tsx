@@ -91,7 +91,7 @@ export default function SignInForm() {
       return; // Stop submission if any client-side validation fails
     }
 
-    const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com';
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com/api';
     
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
