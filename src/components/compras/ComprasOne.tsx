@@ -54,7 +54,7 @@ import {
 
 
 // --- CONFIGURACIÓN DE LA URL BASE DE TU API ---
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com/api';
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com'}/api`;
 
 // --- INTERFACES ---
 interface Compra {

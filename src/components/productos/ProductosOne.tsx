@@ -48,7 +48,7 @@ interface FormVariante {
 }
 
 // --- URLs de API ---
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com';
 
 export default function ProductosTable() {
   // --- ESTADOS ---
@@ -91,7 +91,7 @@ export default function ProductosTable() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/productos`, {
+      const response = await fetch(`${API_BASE_URL}/api/productos`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!response.ok) {
@@ -121,7 +121,7 @@ export default function ProductosTable() {
   const fetchTallas = async () => {
     if (!token) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/tallas`, {
+      const response = await fetch(`${API_BASE_URL}/api/tallas`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!response.ok) {
@@ -139,7 +139,7 @@ export default function ProductosTable() {
   const fetchMarcas = async () => {
     if (!token) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/marcas`, {
+      const response = await fetch(`${API_BASE_URL}/api/marcas`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!response.ok) {
@@ -220,7 +220,7 @@ export default function ProductosTable() {
         estado,
         tallasYColores: variantesForm.map(v => ({ id_talla: v.id_talla, color: v.color, cantidad: 0 })),
       };
-      const response = await fetch(`${API_BASE_URL}/productos`, {
+      const response = await fetch(`${API_BASE_URL}/api/productos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
@@ -256,7 +256,7 @@ export default function ProductosTable() {
           return { id_talla: v.id_talla, color: v.color, cantidad: existingVariant ? existingVariant.stock : 0 };
         }),
       };
-      const response = await fetch(`${API_BASE_URL}/productos/${detalleActual.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/productos/${detalleActual.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
@@ -273,7 +273,7 @@ export default function ProductosTable() {
   const confirmarEliminacion = () => {
     if (!productoAEliminar) return;
     const apiCall = async () => {
-      const response = await fetch(`${API_BASE_URL}/productos/${productoAEliminar.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/productos/${productoAEliminar.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -298,7 +298,7 @@ export default function ProductosTable() {
         estado: !producto.estado,
         tallasYColores: producto.variantes.map(v => ({ id_talla: v.id_talla, color: v.color, cantidad: v.stock }))
       };
-      const response = await fetch(`${API_BASE_URL}/productos/${producto.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/productos/${producto.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
