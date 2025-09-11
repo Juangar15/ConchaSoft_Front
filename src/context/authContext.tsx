@@ -88,11 +88,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return;
     }
     
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com';
+    
     try {
       console.log('Iniciando actualización de datos del usuario...');
       
       // Hacer una petición para obtener los datos actualizados del usuario
-      const response = await fetch(`https://conchasoft-api.onrender.com/api/auth/users/${user.login}`, {
+      const response = await fetch(`${API_BASE_URL}/api/auth/users/${user.login}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -103,7 +105,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.log('Datos del usuario obtenidos:', userData);
         
         // Obtener los permisos del rol
-        const rolesResponse = await fetch('https://conchasoft-api.onrender.com/api/roles', {
+        const rolesResponse = await fetch(`${API_BASE_URL}/api/roles`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -117,7 +119,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             console.log('Rol del usuario encontrado:', userRole);
             
             // Obtener los permisos del rol
-            const permissionsResponse = await fetch(`https://conchasoft-api.onrender.com/api/roles/${userRole.id}/permisos`, {
+            const permissionsResponse = await fetch(`${API_BASE_URL}/api/roles/${userRole.id}/permisos`, {
               headers: {
                 'Authorization': `Bearer ${token}`
               }
@@ -130,7 +132,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               // Obtener los nombres de los permisos
               const permissionsNames = await Promise.all(
                 permissionsData.map(async (permId: number) => {
-                  const permResponse = await fetch(`https://conchasoft-api.onrender.com/api/permisos/${permId}`, {
+                  const permResponse = await fetch(`${API_BASE_URL}/api/permisos/${permId}`, {
                     headers: {
                       'Authorization': `Bearer ${token}`
                     }

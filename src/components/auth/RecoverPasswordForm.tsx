@@ -15,7 +15,7 @@ export default function RecoverPasswordForm() {
   const navigate = useNavigate();
 
   // URL base de tu API desplegada en Render
-  const API_BASE_URL = 'https://conchasoft-api.onrender.com/api/auth';
+  const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com'}/api/auth`;
 
   // --- Función de Validación de Correo ---
   const validateEmail = (value: string): string | null => {

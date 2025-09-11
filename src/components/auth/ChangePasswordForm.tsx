@@ -32,7 +32,7 @@ export default function ChangePasswordForm() {
 
   const emailFromState = location.state?.email;
   const codeFromState = location.state?.code;
-  const API_BASE_URL = 'https://conchasoft-api.onrender.com/api/auth';
+  const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com'}/api/auth`;
 
   useEffect(() => {
     if (!emailFromState || !codeFromState) {
