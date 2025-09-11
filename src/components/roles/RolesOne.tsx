@@ -252,7 +252,7 @@ export default function RolesTable() {
         setNuevoRol(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     };
     
-    const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
+    const handlePageChange = (_: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
     const handleChangeSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSearchTerm(e.target.value);
         setCurrentPage(1);

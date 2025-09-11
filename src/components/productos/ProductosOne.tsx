@@ -368,7 +368,7 @@ export default function ProductosTable() {
     setCurrentPage(1);
   };
 
-  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
+  const handlePageChange = (_: React.ChangeEvent<unknown>, value: number) => setCurrentPage(value);
   const handleItemsPerPageChange = (event: SelectChangeEvent<number>) => {
     setItemsPerPage(Number(event.target.value));
     setCurrentPage(1);

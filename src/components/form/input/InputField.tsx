@@ -1,6 +1,5 @@
 // src/components/form/input/InputField.tsx
 
-import type React from "react";
 import type { FC, InputHTMLAttributes } from "react"; // Importa InputHTMLAttributes
 
 // Extiende InputHTMLAttributes para obtener todas las props estándar de un <input>

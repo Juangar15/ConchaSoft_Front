@@ -656,7 +656,7 @@ export default function ComprasTable() {
                       options={productosDisponibles}
                       getOptionLabel={(option) => `${option.nombre_producto} - ${option.nombre_talla} (${option.color})`}
                       value={productosDisponibles.find(p => p.id_producto_talla === prod.id_producto_talla) || null}
-                      onChange={(event, newValue) => handleProductoChange(i, 'producto', newValue)}
+                      onChange={(_, newValue) => handleProductoChange(i, 'producto', newValue)}
                       isOptionEqualToValue={(option, value) => option.id_producto_talla === value.id_producto_talla}
                       disabled={loadingSelects}
                       renderOption={(props, option) => (
