@@ -38,8 +38,8 @@ interface Rol {
 }
 
 // --- URLs de API ---
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com';
-const API_ROLES_URL = `${API_BASE_URL}/api/roles`;
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com/api';
+const API_ROLES_URL = `${API_BASE_URL}/roles`;
 
 export default function RolesTable() {
     // --- ESTADOS ---

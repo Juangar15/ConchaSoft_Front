@@ -55,8 +55,8 @@ interface CityData {
 }
 
 // --- URLs de API ---
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com';
-const API_CLIENTES_URL = `${API_BASE_URL}/api/clientes`;
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://conchasoft-api.onrender.com/api';
+const API_CLIENTES_URL = `${API_BASE_URL}/clientes`;
 const API_COLOMBIA_DEPARTMENTS_URL = 'https://api-colombia.com/api/v1/Department';
 const API_COLOMBIA_CITIES_BASE_URL = 'https://api-colombia.com/api/v1/Department';
 
